@@ -1,0 +1,47 @@
+# ─── .dockerignore — keep the image small ───────────────────────────────
+#
+# Exclude everything that isn't needed at runtime.
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Python caches and build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtual environments (host-specific)
+.venv/
+venv/
+
+# Secrets (mounted at runtime via -e or --env-file)
+.env
+
+# Runtime data (persistent volume)
+data/
+monitor_state.json
+
+# IDE
+.vscode/
+.idea/
+
+# Tests and debug helpers (not shipped)
+tests/
+test_ticket_monitor.py
+_debug_*.py
+verify_imports.py
+
+# Sample data (development only)
+sample_*.json
+
+# Deployment scripts (host-specific)
+deploy.sh
+tg-ticket-monitor.service
+DEPLOY.md
+
+# Config backup / misc
+--help
+config.json

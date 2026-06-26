@@ -1,0 +1,22 @@
+# ── tkt.ge Telegram Ticket Monitor — Docker Compose ────────────────
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Logs:   docker compose logs -f
+
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Per-chat defaults (overridden at runtime via Telegram commands)
+      - ROUTE=${ROUTE:-}
+      - DATE=${DATE:-}
+      - CLASS=${CLASS:-}
+    volumes:
+      # Persist per-chat JSON configs and monitor state across restarts
+      - data:/app/data
+    container_name: tg-ticket-monitor
+
+volumes:
+  data:
