@@ -273,6 +273,8 @@ BOT_TOKEN=your_bot_token_here
 
 ## Структура проекта
 
+> Полная информация о каждом модуле, тестах и инфраструктуре — в [structure.md](structure.md).
+
 ```
 tg-ticket-monitor/
 ├── bot.py                       # ⚡ Точка входа — Telegram-бот
@@ -291,6 +293,7 @@ tg-ticket-monitor/
 │
 ├── README.md                    # 📖 Этот файл
 ├── api-docs.md                  # 📖 Документация API tkt.ge
+├── structure.md                 # 📖 Подробная архитектура проекта
 ├── .env.example                 # 📋 Шаблон .env
 ├── .gitignore                   # 🙈 Правила игнорирования Git
 ├── requirements.txt             # 📦 Python-зависимости
