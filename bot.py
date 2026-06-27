@@ -139,7 +139,7 @@ async def cmd_start(update: Update, _context) -> None:
     config = load_config(chat_id)
 
     lines = [
-        "👋 *tkt.ge Ticket Monitor*",
+        "👋 *{}*".format("Tre.ge Ticket Monitor" if os.environ.get("TICKET_SOURCE", "tkt.ge") == "tre.ge" else "tkt.ge Ticket Monitor"),
         "",
         "I check train ticket availability on Georgian Railway and notify you.",
         "",
