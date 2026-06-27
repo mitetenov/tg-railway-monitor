@@ -1,121 +1,145 @@
 # tkt.ge Telegram Ticket Monitor — Deployment
 
-## Quick start
+## 🐳 Docker (рекомендуемый способ)
+
+### Требования
+
+- Docker Engine 24+ и Docker Compose v2+
+- Docker daemon включён в автозапуске:
+  ```bash
+  systemctl is-enabled docker   # должен быть enabled
+  ```
+
+### Быстрый запуск
 
 ```bash
-# 1. Edit the .env file with your real BOT_TOKEN from @BotFather
-nano /root/tg-ticket-monitor/.env
-
-# 2. Enable the service to start on boot
-systemctl enable tg-ticket-monitor
-
-# 3. Start the service
-systemctl start tg-ticket-monitor
-
-# 4. Check that it's running
-systemctl status tg-ticket-monitor
-
-# 5. Tail the logs
-journalctl -u tg-ticket-monitor -f
-```
-
-## Service details
-
-| Item | Value |
-|---|---|
-| Service file | `/etc/systemd/system/tg-ticket-monitor.service` |
-| User | `tg-ticket-mon` (system, no login) |
-| Working directory | `/root/tg-ticket-monitor` |
-| Python | `.venv/bin/python3` (virtualenv) |
-| Config data | `/root/tg-ticket-monitor/data/` (per-chat JSON) |
-| .env file | `/root/tg-ticket-monitor/.env` |
-| Python 3.13 compat | `python3 patch_slots.py` after pip install |
-
-## Python 3.13 compatibility
-
-This bot uses `python-telegram-bot==20.8`, which has a known `__slots__` issue on
-Python 3.13: the `Updater` class assigns `self.__polling_cleanup_cb` in `__init__`
-but doesn't include it in the `__slots__` tuple. The `deploy.sh` script automatically
-applies the fix via `patch_slots.py` after installing dependencies.
-
-If you rebuild the virtualenv, re-run the patch:
-
-```bash
-.venv/bin/python3 patch_slots.py
-```
-
-Or run the full deploy script:
-
-```bash
-bash deploy.sh
-```
-
-## What the service does
-
-The bot polls tkt.ge every 60 seconds for each configured route. When it finds new tickets or increased seat availability, it sends a Telegram notification to the chat that set up the monitor.
-
-The `bot.py` entry point:
-- Loads BOT_TOKEN from `.env`
-- Registers 6 commands: `/start`, `/setroute`, `/setdate`, `/setclass`, `/status`, `/stop`
-- Uses python-telegram-bot's `run_polling()` — this blocks and runs forever
-
-## Useful commands
-
-```bash
-# View recent logs
-journalctl -u tg-ticket-monitor -n 50 --no-pager
-
-# Follow logs in real time
-journalctl -u tg-ticket-monitor -f
-
-# Restart the service
-systemctl restart tg-ticket-monitor
-
-# Stop the service
-systemctl stop tg-ticket-monitor
-
-# Disable (prevent start on boot)
-systemctl disable tg-ticket-monitor
-```
-
-## Permissions
-
-- The service runs as `tg-ticket-mon` (non-root system user)
-- Code is at `/root/tg-ticket-monitor` (readable by tg-ticket-mon)
-- The `data/` directory is writable by tg-ticket-mon (per-chat JSON configs)
-- `.env` is readable only by tg-ticket-mon (mode 600)
-- `/root` is mode 755 so tg-ticket-mon can traverse it
-
-## First-time deployment
-
-If you're deploying from scratch, the `deploy.sh` script handles everything:
-
-```bash
-# Edit your token first
 cd /root/tg-ticket-monitor
+
+# 1. Создайте .env с реальным BOT_TOKEN от @BotFather
+cp .env.example .env
 nano .env
 
-# Run the full deployment (venv, deps, patch, service)
-bash deploy.sh
+# 2. Соберите и запустите
+docker compose up -d
 
-# Then enable + start
-systemctl enable tg-ticket-monitor
-systemctl start tg-ticket-monitor
-systemctl status tg-ticket-monitor
+# 3. Проверьте статус
+docker ps --filter name=tg-ticket-monitor
+
+# 4. Логи
+docker compose logs -f
 ```
 
-## Re-deploy after code changes
+Контейнер автоматически запускается при старте системы благодаря:
+- **Docker daemon** включён в systemd (`systemctl enable docker`)
+- **`restart: unless-stopped`** в `docker-compose.yml` — Docker перезапускает контейнер при каждом запуске демона
 
-After `git pull` or manual code updates:
+### Команды управления
+
+| Действие | Команда |
+|----------|---------|
+| Запуск | `docker compose up -d` |
+| Остановка | `docker compose down` |
+| Перезапуск | `docker compose restart` |
+| Логи (follow) | `docker compose logs -f` |
+| Логи (последние 50) | `docker compose logs --tail=50` |
+| Пересборка | `docker compose build --no-cache && docker compose up -d` |
+| Проверка статуса | `docker ps --filter name=tg-ticket-monitor` |
+
+### Переменные окружения
+
+Передаются через `.env` файл (автоматически загружается `docker compose`):
+
+| Переменная | Обязательно | Описание |
+|-----------|-------------|----------|
+| `BOT_TOKEN` | ✅ Да | Токен бота от [@BotFather](https://t.me/BotFather) |
+| `ROUTE` | ❌ Нет | Код станции назначения (умолчание) |
+| `DATE` | ❌ Нет | Дата поездки (умолчание, YYYY-MM-DD) |
+| `CLASS` | ❌ Нет | Класс (1, 2, 3) |
+
+### Персистентность данных
+
+Per-chat конфиги хранятся в томе Docker `data:/app/data`. Данные сохраняются между перезапусками контейнера и не теряются при `docker compose down`.
 
 ```bash
-# Re-apply ownership in case files were created as root
-chown -R tg-ticket-mon:tg-ticket-mon /root/tg-ticket-monitor
-
-# If dependencies changed, rebuild and re-patch:
-# .venv/bin/pip install -r requirements.txt
-# .venv/bin/python3 patch_slots.py
-
-# Restart to pick up changes
-systemctl restart tg-ticket-monitor
+# Просмотр данных внутри тома
+docker run --rm -v tg-ticket-monitor_data:/data alpine ls -la /data
 ```
+
+### Пересборка после изменений кода
+
+```bash
+cd /root/tg-ticket-monitor
+git pull                         # или внесите изменения вручную
+docker compose build --no-cache  # пересобрать образ
+docker compose up -d             # перезапустить
+```
+
+---
+
+## ⚠️ Миграция с systemd на Docker
+
+Если ранее проект был установлен через systemd (bare-metal), выполните следующие шаги:
+
+### 1. Остановите и отключите systemd-сервис
+
+```bash
+systemctl stop tg-ticket-monitor
+systemctl disable tg-ticket-monitor
+rm /etc/systemd/system/tg-ticket-monitor.service
+rm /etc/systemd/system/multi-user.target.wants/tg-ticket-monitor.service
+systemctl daemon-reload
+```
+
+### 2. Убедитесь, что данные не потеряются
+
+Per-chat конфиги находятся в `/root/tg-ticket-monitor/data/`. Docker-композ использует том `data:/app/data`. При первом запуске `docker compose up`:
+- Если том ещё не существует — Docker создаёт пустой том
+- Данные из `/root/tg-ticket-monitor/data/` **не копируются в том автоматически**
+
+**Чтобы сохранить существующие данные:**
+```bash
+# Скопировать данные в том Docker
+docker run --rm \
+  -v /root/tg-ticket-monitor/data:/src \
+  -v tg-ticket-monitor_data:/dst \
+  alpine sh -c "cp -r /src/* /dst/ 2>/dev/null; ls -la /dst"
+```
+
+Или используйте bind mount вместо тома (временно измените `docker-compose.yml`):
+```yaml
+volumes:
+  - /root/tg-ticket-monitor/data:/app/data  # bind mount вместо named volume
+```
+
+### 3. Перенесите .env
+
+Файл `.env` уже находится в `/root/tg-ticket-monitor/.env` и будет автоматически загружен `docker compose`.
+
+### 4. Запустите Docker-контейнер
+
+```bash
+docker compose up -d
+```
+
+### 5. Проверьте логи
+
+```bash
+docker compose logs -f
+```
+
+---
+
+## 🗑️ Устаревший способ: systemd (legacy)
+
+> **Проект переведён на Docker в июне 2026.**
+> Инструкции по systemd-деплою сохранены в репозитории для истории:
+> - `deploy.sh` — скрипт деплоя (legacy)
+> - `tg-ticket-monitor.service` — unit-файл (legacy)
+> - README.md → раздел «Запуск через systemd (устаревший способ)»
+
+Вкратце, для bare-metal запуска требовалось:
+1. Установить зависимости в `.venv`
+2. Применить `patch_slots.py` (для Python 3.13)
+3. Установить systemd unit и запустить сервис
+
+Docker решает все эти проблемы «из коробки» — изолированное окружение, фиксированная версия Python, автозапуск через restart policy.

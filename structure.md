@@ -17,10 +17,9 @@ tg-ticket-monitor/
 ├── Dockerfile                   # 🐳 Образ Docker (python:3-alpine)
 ├── docker-compose.yml           # 🐳 Docker Compose с volume data/
 ├── docker-entrypoint.sh         # 🏁 Генерация .env из переменных окружения
-├── deploy.sh                    # 🚀 Deploy-скрипт systemd сервиса
-├── tg-ticket-monitor.service    # ⚙️ Unit-файл systemd
-├── DEPLOY.md                    # 📖 Документация по деплою
-│
+├── deploy.sh                    # 🚀 Deploy-скрипт (устаревший — systemd legacy)
+├── tg-ticket-monitor.service    # ⚙️ Unit-файл systemd (legacy)
+├── DEPLOY.md                    # 📖 Документация по деплою (рекомендуется Docker)
 ├── config.json                  # 📄 Пример конфигурации для standalone-режима
 ├── monitor_state.json           # 💾 Сохранённое состояние (gitignored)
 ├── requirements.txt             # 📦 Python-зависимости

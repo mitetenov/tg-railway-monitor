@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 # deploy.sh — one-shot setup for the tg-ticket-monitor systemd service
+#
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  ⚠️  УСТАРЕВШИЙ СКРИПТ                                      ║
+# ║  Проект переведён на Docker (июнь 2026).                     ║
+# ║  Используйте:  docker compose up -d                          ║
+# ║  Подробнее:    DEPLOY.md                                     ║
+# ╚══════════════════════════════════════════════════════════════╝
+#
 # Run as root:  bash deploy.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SERVICE_NAME="tg-ticket-monitor"
 
-echo "=== tg-ticket-monitor deployment ==="
+echo "=== tg-ticket-monitor deployment (LEGACY — use Docker instead) ==="
 
 # ── 1. Create non-privileged system user ────────────────────────────
 if ! id -u tg-ticket-mon &>/dev/null; then
@@ -59,9 +67,12 @@ install -m 644 -o root -g root "$SCRIPT_DIR/tg-ticket-monitor.service" /etc/syst
 systemctl daemon-reload
 
 echo ""
-echo "=== Deployment complete ==="
+echo "=== Deployment complete (LEGACY) ==="
 echo ""
-echo "Next steps:"
+echo "⚠️  This script is DEPRECATED. Use Docker instead:"
+echo "   cd $SCRIPT_DIR && docker compose up -d"
+echo ""
+echo "If you must use systemd:"
 echo "  1. Edit $SCRIPT_DIR/.env with your real BOT_TOKEN from @BotFather"
 echo "  2. Enable on boot:   systemctl enable $SERVICE_NAME"
 echo "  3. Start:            systemctl start $SERVICE_NAME"

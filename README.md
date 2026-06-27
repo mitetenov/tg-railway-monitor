@@ -87,44 +87,24 @@ Bot:   ✅ Класс установлен: I Class. Мониторинг зап
 
 ## Быстрый старт за 5 минут
 
-### Вариант 1: Docker (рекомендуется)
+### Docker (рекомендуемый способ)
 
 ```bash
-# 1. Клонируйте репозиторий
+# 1. Перейдите в директорию проекта
 cd /root/tg-ticket-monitor
 
 # 2. Создайте .env из шаблона
 cp .env.example .env
 nano .env    # вставьте BOT_TOKEN от @BotFather
 
-# 3. Запустите
+# 3. Запустите контейнер
 docker compose up -d
 
 # 4. Проверьте логи
 docker compose logs -f
 ```
 
-### Вариант 2: systemd (bare-metal)
-
-```bash
-# 1. Создайте .env
-cd /root/tg-ticket-monitor
-cp .env.example .env
-nano .env
-
-# 2. Запустите скрипт деплоя (создаёт пользователя, venv, сервис)
-bash deploy.sh
-
-# 3. Включите автозапуск и стартуйте
-systemctl enable tg-ticket-monitor
-systemctl start tg-ticket-monitor
-
-# 4. Проверьте статус и логи
-systemctl status tg-ticket-monitor
-journalctl -u tg-ticket-monitor -f
-```
-
-Подробнее о деплое через systemd — см. [DEPLOY.md](DEPLOY.md).
+> **Примечание:** Ранее проект использовал systemd для bare-metal запуска. Этот способ считается **устаревшим** — все новые установки должны использовать Docker. Подробнее о миграции — в [DEPLOY.md](DEPLOY.md).
 
 ---
 
@@ -194,11 +174,13 @@ docker run -d --restart unless-stopped \
 
 ---
 
-## Запуск через systemd
+## Запуск через systemd (устаревший способ)
 
-### Сервисный unit-файл
+> **⚠️ ВНИМАНИЕ:** Начиная с июня 2026, проект использует **Docker** как основной способ деплоя.
+> systemd-запуск считается **legacy** и больше не поддерживается для новых установок.
+> Если вы ещё используете systemd — см. [DEPLOY.md](DEPLOY.md) для инструкции по миграции на Docker.
 
-Проект включает готовый unit-файл: `tg-ticket-monitor.service`
+Проект включает готовый unit-файл: `tg-ticket-monitor.service` (хранится в репозитории для истории).
 
 **Установка** (автоматически через `deploy.sh` или вручную):
 
@@ -286,9 +268,9 @@ tg-ticket-monitor/
 ├── Dockerfile                   # 🐳 Образ Docker (python:3-alpine)
 ├── docker-compose.yml           # 🐳 Docker Compose с volume data/
 ├── docker-entrypoint.sh         # 🏁 Генерация .env из переменных окружения
-├── deploy.sh                    # 🚀 Deploy-скрипт systemd сервиса
-├── tg-ticket-monitor.service    # ⚙️ Unit-файл systemd
-├── DEPLOY.md                    # 📖 Документация по деплою через systemd
+├── deploy.sh                    # 🚀 Deploy-скрипт (устаревший — systemd legacy)
+├── tg-ticket-monitor.service    # ⚙️ Unit-файл systemd (legacy, хранится для истории)
+├── DEPLOY.md                    # 📖 Документация по деплою (в т.ч. Docker)
 ├── patch_slots.py               # 🔧 Патч python-telegram-bot для Python 3.13
 │
 ├── README.md                    # 📖 Этот файл
@@ -407,15 +389,17 @@ NameError: property __polling_cleanup_cb not found in __slots__
 
 **Решение:** проект включает `patch_slots.py`, который автоматически добавляет недостающий атрибут в `__slots__` класса `Updater`.
 
-Скрипт деплоя (`deploy.sh`) применяет патч автоматически. При ручной переустановке зависимостей:
+> **Docker** (рекомендуемый способ): образ использует `python:3.11-alpine`, где этой проблемы нет.
+>
+> **systemd (legacy):** скрипт деплоя (`deploy.sh`) применял патч автоматически. При ручной переустановке зависимостей:
 
 ```bash
 .venv/bin/python3 patch_slots.py
 ```
 
-> **Docker:** образ использует `python:3.11-alpine`, где этой проблемы нет.
 
 ---
+
 
 ## Лицензия
 
