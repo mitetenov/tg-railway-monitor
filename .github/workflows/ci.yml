@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -6,17 +6,67 @@ on:
   pull_request:
     branches: [main]
 
+# ── Jobs ────────────────────────────────────────────────────────────────────
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install dependencies
         run: pip install -r requirements.txt pytest pytest-asyncio pytest-mock
+
       - name: Run tests
         run: pytest -v
+
       - name: Check syntax
         run: python -m compileall -q . -x '.venv|__pycache__|tests'
+
+  # ── Multi-arch Docker build & push (push to main only) ─────────────────
+  docker-build:
+    needs: [test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: echo "VERSION=$(cat version.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate version
+        run: |
+          echo "Building image for version: ${{ steps.version.outputs.VERSION }}"
+          # Ensure it looks like semver
+          echo "${{ steps.version.outputs.VERSION }}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "ERROR: version.txt does not contain a valid SemVer"; exit 1; }
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/tg-ticket-monitor:latest
+            ${{ secrets.DOCKER_USERNAME }}/tg-ticket-monitor:${{ steps.version.outputs.VERSION }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ steps.version.outputs.VERSION }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

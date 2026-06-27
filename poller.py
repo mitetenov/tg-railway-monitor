@@ -28,8 +28,28 @@ def _notified_key(ride_number: int, class_name: str) -> str:
     return f"{ride_number}:{class_name}"
 
 
+def _format_time(iso_str: str) -> str:
+    """Extract HH:MM from ISO datetime string, handling timezone offsets."""
+    if not iso_str:
+        return "??:??"
+    try:
+        if "T" in iso_str:
+            time_part = iso_str.split("T")[1]
+            # Strip timezone offset: +04:00, Z, etc
+            for sep in ("+", "-", "Z"):
+                if sep in time_part[2:]:  # skip the HH part
+                    time_part = time_part.split(sep)[0]
+            return time_part[:5]
+        return iso_str
+    except (IndexError, ValueError):
+        return iso_str
+
+
 async def _check_and_notify(bot: Bot, chat_id: int) -> None:
-    """Single check → notify if new tickets found."""
+    """Single check → notify if new tickets found.
+
+    Groups all newly-found seat classes for the same ride into one message.
+    """
     config = load_config(chat_id)
     if not config:
         return
@@ -52,11 +72,18 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
     if not rides:
         return
 
-    # Find rides matching the user's class filter
-    new_finds = []
+    # ── Collect newly-found classes per ride ────────────────────────
+    # ride_number -> (ride_dict, [(cls_name, seats, price), ...])
+    rides_with_new: dict = {}
+
     for ride in rides:
-        classes = ride.get("availableSeatsClasses", [])
-        for cls in classes:
+        ride_num = ride.get("rideNumber")
+        if ride_num is None:
+            continue
+
+        new_classes = []
+        classes_raw = ride.get("availableSeatsClasses", [])
+        for cls in classes_raw:
             cls_name = cls.get("seatClassName", "")
             seats = cls.get("availableNumberOfSeats", 0)
             price = cls.get("moneyAmount", "?")
@@ -70,27 +97,30 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
                     continue
 
             if seats is not None and seats > 0:
-                key = _notified_key(ride.get("rideNumber"), cls_name)
+                key = _notified_key(ride_num, cls_name)
                 if key not in _notified.setdefault(chat_id, set()):
-                    new_finds.append((ride, cls_name, seats, price))
+                    new_classes.append((cls_name, seats, price))
                     _notified[chat_id].add(key)
 
-    if not new_finds:
+        if new_classes:
+            rides_with_new[ride_num] = (ride, new_classes)
+
+    if not rides_with_new:
         return
 
-    # Build notification message
+    # ── Build one grouped notification per ride ─────────────────────
     lines = [
         f"🎫 *{config.get('from_station', '?')}* → *{config.get('to_station', '?')}*",
         f"📅 {date}",
         "",
     ]
-    for ride, cls_name, seats, price in new_finds[:5]:
-        dep = (ride.get("rideStartDate") or "")[:5]
-        arr = (ride.get("rideEndDate") or "")[:5]
+    for ride_num, (ride, class_list) in list(rides_with_new.items())[:5]:
+        dep = _format_time(ride.get("rideStartDate") or "")
+        arr = _format_time(ride.get("rideEndDate") or "")
         dur = ride.get("rideDuration", "?")
-        ride_n = ride.get("rideNumber", "?")
-        lines.append(f"🚆 *Ride #{ride_n}*  {dep} → {arr} ({dur})")
-        lines.append(f"   {cls_name}: {seats} seat(s) · {price} GEL")
+        lines.append(f"🚆 *Ride #{ride_num}*  {dep} → {arr} ({dur})")
+        for cls_name, seats, price in class_list:
+            lines.append(f"   {cls_name}: {seats} мест · {price} GEL")
         lines.append("")
 
     try:

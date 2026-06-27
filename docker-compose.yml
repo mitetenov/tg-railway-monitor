@@ -5,7 +5,11 @@
 
 services:
   bot:
-    build: .
+    build:
+      context: .
+      args:
+        VERSION: "${VERSION:-0.1.0}"
+    image: tg-ticket-monitor:${VERSION:-0.1.0}
     restart: unless-stopped
     env_file: .env
     environment:
