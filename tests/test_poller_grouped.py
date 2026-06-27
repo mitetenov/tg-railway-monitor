@@ -186,11 +186,10 @@ def test_grouped_message_format():
     lines.append(f"🚆 *Ride #{ride_num}*  {dep} → {arr} ({dur})")
     # Build purchase link (mirroring poller logic)
     purchase_url = (
-        f"https://tkt.ge/en/railway/seatmap"
-        f"?rideId={ride.get('id')}"
-        f"&fromStationCode={from_code}"
-        f"&toStationCode={to_code}"
-        f"&departureDateFrom={ride.get('rideStartDate')}"
+        f"https://tkt.ge/en/railway"
+        f"?startStationCode={from_code}"
+        f"&endStationCode={to_code}"
+        f"&departureDate=2026-06-27"
     )
     lines.append(f"🔗 [Купить]({purchase_url})")
     for cls_name, seats, price in class_list:
@@ -206,14 +205,13 @@ def test_grouped_message_format():
     # Ride line
     assert "🚆 *Ride #812*  00:30 → 05:42 (05:12:00)" in message
 
-    # Purchase link — verify it points to seatmap with correct params
+    # Purchase link — verify it points to search URL with correct params
     assert "🔗 [" in message
     assert "Купить]" in message
-    assert "https://tkt.ge/en/railway/seatmap" in message
-    assert "?rideId=812" in message
-    assert "&fromStationCode=56014" in message
-    assert "&toStationCode=57151" in message
-    assert "&departureDateFrom=2026-06-27T00:30:00Z" in message
+    assert "https://tkt.ge/en/railway" in message
+    assert "?startStationCode=56014" in message
+    assert "&endStationCode=57151" in message
+    assert "&departureDate=2026-06-27" in message
 
     # Class lines — all three present with English names
     assert "II Class: 89 мест · 36 GEL" in message
