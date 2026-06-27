@@ -55,6 +55,7 @@ def test_notified_key_basic():
 def _make_ride(ride_num, classes):
     """Construct a ride dict matching the tkt.ge API response shape."""
     return {
+        "id": ride_num,
         "rideNumber": ride_num,
         "rideStartDate": "2026-06-27T00:30:00Z",
         "rideEndDate": "2026-06-27T05:42:00Z",
@@ -186,9 +187,10 @@ def test_grouped_message_format():
     # Build purchase link (mirroring poller logic)
     purchase_url = (
         f"https://tkt.ge/en/railway/seatmap"
-        f"?rideNumber={ride_num}"
+        f"?rideId={ride.get('id')}"
         f"&fromStationCode={from_code}"
         f"&toStationCode={to_code}"
+        f"&departureDateFrom={ride.get('rideStartDate')}"
     )
     lines.append(f"🔗 [Купить]({purchase_url})")
     for cls_name, seats, price in class_list:
@@ -208,9 +210,10 @@ def test_grouped_message_format():
     assert "🔗 [" in message
     assert "Купить]" in message
     assert "https://tkt.ge/en/railway/seatmap" in message
-    assert "?rideNumber=812" in message
+    assert "?rideId=812" in message
     assert "&fromStationCode=56014" in message
     assert "&toStationCode=57151" in message
+    assert "&departureDateFrom=2026-06-27T00:30:00Z" in message
 
     # Class lines — all three present with English names
     assert "II Class: 89 мест · 36 GEL" in message
