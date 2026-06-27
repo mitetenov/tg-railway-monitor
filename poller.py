@@ -124,12 +124,7 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         dur = ride.get("rideDuration", "?")
         lines.append(f"🚆 *Ride #{ride_num}*  {dep} → {arr} ({dur})")
         # Build purchase link for this ride
-        purchase_url = (
-            f"https://tkt.ge/en/railway"
-            f"?startStationCode={from_code}"
-            f"&endStationCode={to_code}"
-            f"&departureDate={date}"
-        )
+        purchase_url = "https://tkt.ge/en/railway"
         lines.append(f"🔗 [Купить]({purchase_url})")
         for cls_name, seats, price in class_list:
             lines.append(f"   {cls_name}: {seats} мест · {price} GEL")
