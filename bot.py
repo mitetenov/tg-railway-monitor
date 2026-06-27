@@ -11,7 +11,7 @@ from typing import Optional
 
 import aiohttp
 from dotenv import load_dotenv
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -164,6 +164,7 @@ async def cmd_start(update: Update, _context) -> None:
     lines.append("/setclass — pick seat class")
     lines.append("/status — show current config & polling")
     lines.append("/stop — stop monitoring")
+    lines.append("/resume — resume monitoring (if route is configured)")
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -206,6 +207,13 @@ async def cmd_stop(update: Update, _context) -> None:
         "🛑 Monitoring stopped. Your configuration is preserved.\n"
         "Use /setroute to restart."
     )
+
+
+async def cmd_resume(update: Update, _context) -> None:
+    """Resume monitoring for this chat (route must be configured)."""
+    chat_id = update.effective_chat.id
+    success, msg = poller.resume(_context.bot, chat_id)
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 
 # ═══════════════════ /setroute Conversation ══════════════════════════
@@ -477,8 +485,19 @@ async def fallback_handler(update: Update, _context) -> None:
 # ═══════════════════ Main ════════════════════════════════════════════
 
 async def post_init(application: Application) -> None:
-    """Run after Application initialisation — load station cache."""
+    """Run after Application initialisation — load station cache and register bot commands."""
     await load_stations()
+    await application.bot.set_my_commands(
+        [
+            BotCommand("start", "Start the bot and show help"),
+            BotCommand("setroute", "Set departure and arrival stations"),
+            BotCommand("setdate", "Set travel date"),
+            BotCommand("setclass", "Select seat class"),
+            BotCommand("resume", "Resume paused monitoring"),
+            BotCommand("status", "Show current configuration and status"),
+        ]
+    )
+    logger.info("Bot commands registered with Telegram API")
 
 
 def main() -> None:
@@ -489,6 +508,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("stop", cmd_stop))
+    app.add_handler(CommandHandler("resume", cmd_resume))
 
     # ── /setroute Conversation ──
     setroute_conv = ConversationHandler(

@@ -12,6 +12,7 @@ from telegram.error import TelegramError
 
 from api import get_available_rides
 from config_manager import load_config
+from ticket_monitor import CLASS_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ _running_tasks: Dict[int, asyncio.Task] = {}
 
 # Track already-notified ride+class combos so we don't spam
 _notified: Dict[int, set] = {}
+
+# Pause state per chat — when True the loop stays alive but skips checks
+_paused: Dict[int, bool] = {}
 
 
 def _notified_key(ride_number: int, class_name: str) -> str:
@@ -84,7 +88,7 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         new_classes = []
         classes_raw = ride.get("availableSeatsClasses", [])
         for cls in classes_raw:
-            cls_name = cls.get("seatClassName", "")
+            cls_name = CLASS_NAMES.get(cls.get("seatClassId"), "")
             seats = cls.get("availableNumberOfSeats", 0)
             price = cls.get("moneyAmount", "?")
 
@@ -119,6 +123,14 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         arr = _format_time(ride.get("rideEndDate") or "")
         dur = ride.get("rideDuration", "?")
         lines.append(f"🚆 *Ride #{ride_num}*  {dep} → {arr} ({dur})")
+        # Build purchase link for this ride
+        purchase_url = (
+            f"https://tkt.ge/en/railway/seatmap"
+            f"?rideNumber={ride_num}"
+            f"&fromStationCode={from_code}"
+            f"&toStationCode={to_code}"
+        )
+        lines.append(f"🔗 [Купить]({purchase_url})")
         for cls_name, seats, price in class_list:
             lines.append(f"   {cls_name}: {seats} мест · {price} GEL")
         lines.append("")
@@ -134,11 +146,19 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
 
 
 async def _poller_loop(bot: Bot, chat_id: int) -> None:
-    """Infinite loop checking tickets for a single chat."""
+    """Infinite loop checking tickets for a single chat.
+
+    Respects the per-chat pause flag: when paused the loop stays alive
+    (so resume() can unpause without creating a new task) but skips the
+    API check and notification.
+    """
     logger.info("Started polling for chat %d", chat_id)
     try:
         while True:
-            await _check_and_notify(bot, chat_id)
+            if not _paused.get(chat_id, False):
+                await _check_and_notify(bot, chat_id)
+            else:
+                logger.debug("Polling paused for chat %d", chat_id)
             await asyncio.sleep(MONITOR_INTERVAL)
     except asyncio.CancelledError:
         logger.info("Polling cancelled for chat %d", chat_id)
@@ -164,12 +184,52 @@ def stop(chat_id: int) -> None:
         task.cancel()
         logger.info("Poller stopped for chat %d", chat_id)
     _notified.pop(chat_id, None)
+    _paused.pop(chat_id, None)
 
 
 def is_running(chat_id: int) -> bool:
     """Check if polling is active for this chat."""
     task = _running_tasks.get(chat_id)
     return task is not None and not task.done()
+
+
+def pause(chat_id: int) -> None:
+    """Temporarily pause monitoring for a chat (keeps the task alive)."""
+    _paused[chat_id] = True
+    logger.info("Poller paused for chat %d", chat_id)
+
+
+def is_paused(chat_id: int) -> bool:
+    """Check if the poller loop is currently paused for a chat."""
+    return _paused.get(chat_id, False)
+
+
+def resume(bot: Bot, chat_id: int) -> tuple[bool, str]:
+    """Resume monitoring for a chat.
+
+    Checks route configuration first. If the route is not set, returns
+    ``(False, error_message)``. Otherwise clears the pause flag and
+    starts the poller if it is not already running.
+
+    Returns ``(True, success_message)`` on success.
+    """
+    from config_manager import load_config
+
+    config = load_config(chat_id)
+    if not config.get("from_station_code") or not config.get("to_station_code"):
+        return (
+            False,
+            "❌ Route not configured. Use /setroute first.",
+        )
+
+    # Clear pause flag so the loop resumes checking
+    _paused.pop(chat_id, None)
+
+    if not is_running(chat_id):
+        start(bot, chat_id)
+        return (True, "✅ Monitoring resumed!")
+    else:
+        return (True, "✅ Monitoring is already active.")
 
 
 def active_count() -> int:
