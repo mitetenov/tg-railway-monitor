@@ -12,6 +12,7 @@ from telegram import Bot
 from telegram.error import TelegramError
 
 from api import get_available_rides
+from api_tre import TreGeApi, station_to_slug
 from config_manager import load_config
 from ticket_monitor import CLASS_NAMES
 
@@ -128,7 +129,9 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         # Use TICKET_SOURCE env variable to pick the right purchase URL
         source = os.environ.get("TICKET_SOURCE", "tkt.ge")
         if source == "tre.ge":
-            purchase_url = "https://tre.ge"
+            from_slug = station_to_slug(config.get("from_station", ""))
+            to_slug = station_to_slug(config.get("to_station", ""))
+            purchase_url = TreGeApi.build_purchase_url(from_slug, to_slug, date)
         else:
             purchase_url = "https://tkt.ge/en/railway"
         lines.append(f"🔗 [Купить]({purchase_url})")

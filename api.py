@@ -1,31 +1,104 @@
 """
-Async API client for tkt.ge Georgian Railway.
-Wraps the public endpoints in non-blocking aiohttp calls.
+Async API client for Georgian Railway ticket services.
+Provides an abstract base class (TicketApi), concrete implementations
+(TktGeApi, TreGeApi), and a factory function (get_ticket_api()).
+
+Backward-compatible aliases are maintained at module level so existing
+code (poller.py, bot.py) continues to work unchanged.
 """
-import aiohttp
+import os
 from typing import Any, Optional
 
-API_BASE = "https://gateway.tkt.ge/integrations/api/GeorgianRailway"
-API_KEY = "7d8d34d1-e9af-4897-9f0f-5c36c179be77"  # public key embedded in client-side JS
+import aiohttp
+
+from _api_base import API_BASE, API_KEY, TicketApi
+from api_tkt import TktGeApi
+from api_tre import TreGeApi
+
+# ── Default API source name ──────────────────────────────────────────
+DEFAULT_TICKET_SOURCE = "tktge"
+
+
+# ═══════════════════════ Factory ══════════════════════════════════════
+
+_SOURCE_REGISTRY: dict[str, type] = {  # type[TicketApi] after TktGeApi refactor
+    "tktge": TktGeApi,
+    "trege": TreGeApi,
+}
+
+# Module-level singleton — set by get_ticket_api() or by init_ticket_api()
+_api_instance: Optional[TicketApi] = None
+
+
+def get_ticket_api(source: Optional[str] = None) -> TicketApi:
+    """Factory: return a TicketApi instance matching *source*.
+
+    If *source* is None, the value is read from the ``TICKET_SOURCE``
+    environment variable.  If that is also unset, the default
+    ``"tktge"`` is used.
+
+    The first call to ``get_ticket_api()`` stores the result as a
+    module-level singleton so that subsequent calls (including
+    module-level function aliases) use the same instance.
+
+    Raises ValueError on an unknown source name.
+    """
+    global _api_instance
+
+    src = (source or os.environ.get("TICKET_SOURCE") or DEFAULT_TICKET_SOURCE).lower().strip()
+    cls = _SOURCE_REGISTRY.get(src)
+    if cls is None:
+        raise ValueError(
+            f"Unknown TICKET_SOURCE {src!r}. "
+            f"Available: {', '.join(sorted(_SOURCE_REGISTRY))}"
+        )
+
+    # Create and cache the singleton
+    _api_instance = cls()
+    return _api_instance
+
+
+def init_ticket_api(source: Optional[str] = None) -> TicketApi:
+    """Explicitly initialise the module-level ticket API singleton.
+
+    This is called during application startup (bot.post_init) to
+    ensure the factory is connected.  Returns the created instance.
+    """
+    return get_ticket_api(source)
+
+
+# ═══════════════════════ Backward-Compatible Aliases ══════════════════
+
+# These module-level functions delegate to the cached _api_instance.
+# If _api_instance is None they fall back to a default TktGeApi()
+# instance so that existing importers (poller.py, bot.py) continue to
+# work without changes.
+
+
+def _resolve_api() -> Any:
+    """Return the cached singleton, or a default TktGeApi()."""
+    if _api_instance is not None:
+        return _api_instance
+    # Lazy fallback — create a default TktGeApi but do NOT cache it
+    # so that a subsequent get_ticket_api() call still becomes the
+    # canonical singleton.
+    return TktGeApi()
 
 
 async def fetch_json(session: aiohttp.ClientSession, url: str, label: str = "") -> Optional[Any]:
-    """Fetch JSON from a URL. Returns None on any error."""
-    try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-            if resp.status != 200:
-                print(f"[api] {label}: HTTP {resp.status}")
-                return None
-            return await resp.json()
-    except Exception as e:
-        print(f"[api] {label}: {e}")
-        return None
+    """Backward-compatible alias for TktGeApi.fetch_json()."""
+    api = _resolve_api()
+    if isinstance(api, TktGeApi):
+        return await api.fetch_json(session, url, label)
+    raise NotImplementedError(
+        f"fetch_json() is only supported by TktGeApi, not {type(api).__name__}"
+    )
 
 
 async def get_stations(session: aiohttp.ClientSession) -> Optional[list]:
-    """Fetch list of railway stations from the dictionary endpoint."""
-    url = f"{API_BASE}/Dictionaries/civil-stations?api_key={API_KEY}"
-    return await fetch_json(session, url, "stations")
+    """Backward-compatible alias delegating to the active API instance."""
+    api = _resolve_api()
+    return await api.get_stations(session)
 
 
 async def get_available_rides(
@@ -35,24 +108,9 @@ async def get_available_rides(
     date_str: str,
     passengers: int = 1,
 ) -> Optional[dict]:
-    """Get actual train rides for a specific route/date.
-
-    Args:
-        from_code: Station code for departure.
-        to_code: Station code for arrival.
-        date_str: Date in YYYY-MM-DD format.
-        passengers: Number of passengers (default 1).
-    """
-    url = (
-        f"{API_BASE}/Availability/available-rides"
-        f"?passengersNumbers={passengers}"
-        f"&departureDateFrom={date_str}T00:00:00.000Z"
-        f"&startStationCode={from_code}"
-        f"&endStationCode={to_code}"
-        f"&returnWay=false&disability=false"
-        f"&api_key={API_KEY}"
-    )
-    return await fetch_json(session, url, "rides")
+    """Backward-compatible alias for ``search_trips()``."""
+    api = _resolve_api()
+    return await api.search_trips(session, from_code, to_code, date_str, passengers)
 
 
 async def get_availability_calendar(
@@ -60,9 +118,6 @@ async def get_availability_calendar(
     from_code: str,
     to_code: str,
 ) -> Optional[dict]:
-    """Get daily ticket availability calendar (30-day window)."""
-    url = (
-        f"{API_BASE}/Availability/availability-calendar"
-        f"?fromStationCode={from_code}&toStationCode={to_code}&api_key={API_KEY}"
-    )
-    return await fetch_json(session, url, "calendar")
+    """Backward-compatible alias delegating to the active API instance."""
+    api = _resolve_api()
+    return await api.get_availability_calendar(session, from_code, to_code)
