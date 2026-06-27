@@ -379,8 +379,11 @@ class TestGetTicketApi:
             assert isinstance(api, TktGeApi), f"Failed for {variant!r}"
 
     def test_source_registry_members(self):
-        """Registry contains exactly the expected sources."""
-        assert set(_SOURCE_REGISTRY.keys()) == {"tktge", "trege"}
+        """Factory supports tktge and trege sources."""
+        from api import ALL_SOURCES
+        assert set(ALL_SOURCES) == {"tktge", "trege"}
+        # tktge is in the module-level registry; trege is lazily imported
+        assert "tktge" in _SOURCE_REGISTRY
 
     def test_init_ticket_api_sets_singleton(self):
         """init_ticket_api() sets the module-level singleton."""

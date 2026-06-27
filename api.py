@@ -127,17 +127,15 @@ class TicketApi(ABC):
         ...
 
 
-# ══════════════════════ TreGeApi Import ══════════════════════════════════
-
-from api_tre import TreGeApi  # noqa: E402 — separate module, after ABC def
-
-
 # ═══════════════════════ Factory ══════════════════════════════════════
 
 _SOURCE_REGISTRY: dict[str, type[TicketApi]] = {
     "tktge": TktGeApi,
-    "trege": TreGeApi,
+    # "trege" resolved lazily inside get_ticket_api() — TreGeApi lives
+    # in api_tre.py to avoid a circular import (api_tre imports TicketApi
+    # from this module).
 }
+ALL_SOURCES = ("tktge", "trege")
 
 # Module-level singleton — set by get_ticket_api() or by init_ticket_api()
 _api_instance: Optional[TicketApi] = None
@@ -159,11 +157,18 @@ def get_ticket_api(source: Optional[str] = None) -> TicketApi:
     global _api_instance
 
     src = (source or os.environ.get("TICKET_SOURCE") or DEFAULT_TICKET_SOURCE).lower().strip()
-    cls = _SOURCE_REGISTRY.get(src)
+
+    # Resolve "trege" lazily to avoid circular import at module level
+    if src == "trege":
+        from api_tre import TreGeApi  # noqa: F811
+        cls: type[TicketApi] = TreGeApi
+    else:
+        cls = _SOURCE_REGISTRY.get(src)
+
     if cls is None:
         raise ValueError(
             f"Unknown TICKET_SOURCE {src!r}. "
-            f"Available: {', '.join(sorted(_SOURCE_REGISTRY))}"
+            f"Available: {', '.join(sorted(ALL_SOURCES))}"
         )
 
     # Create and cache the singleton
@@ -234,3 +239,17 @@ async def get_availability_calendar(
     """Backward-compatible alias delegating to the active API instance."""
     api = _resolve_api()
     return await api.get_availability_calendar(session, from_code, to_code)
+
+
+# ── Lazy module attribute for ``from api import TreGeApi`` ────────────
+
+
+def __getattr__(name: str):
+    """Resolve TreGeApi lazily so that ``from api import TreGeApi`` works
+    without creating a circular import at module-load time."""
+    if name == "TreGeApi":
+        from api_tre import TreGeApi as _TreGeApi
+        # Cache in module globals so subsequent accesses are O(1)
+        globals()[name] = _TreGeApi
+        return _TreGeApi
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
