@@ -22,7 +22,7 @@ from telegram.ext import (
 )
 
 import poller
-from api import get_stations
+from api import get_stations, init_ticket_api
 from config_manager import load_config, save_config, is_config_complete
 
 # ── logging ──────────────────────────────────────────────────────────
@@ -486,6 +486,7 @@ async def fallback_handler(update: Update, _context) -> None:
 
 async def post_init(application: Application) -> None:
     """Run after Application initialisation — load station cache and register bot commands."""
+    init_ticket_api()  # initialise TICKET_SOURCE factory before any API calls
     await load_stations()
     await application.bot.set_my_commands(
         [

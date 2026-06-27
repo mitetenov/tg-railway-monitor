@@ -8,6 +8,9 @@ from typing import Optional
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
+# ── Ticket source default ────────────────────────────────────────────
+DEFAULT_TICKET_SOURCE = "tktge"
+
 
 def _ensure_data_dir() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
