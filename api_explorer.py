@@ -7,29 +7,8 @@ import json
 import sys
 from datetime import datetime, timedelta, timezone
 
-API_BASE = "https://gateway.tkt.ge/integrations/api/GeorgianRailway"
-API_KEY = "7d8d34d1-e9af-4897-9f0f-5c36c179be77"
-
-# Station codes (from /Dictionaries/civil-stations)
-STATIONS = {
-    "56014": "Tbilisi (tbilisi-samg)",
-    "57151": "Batumi (batumi ( samg))",
-    "57450": "Kutaisi Airport (qutaisis saertashoriso aeroporti)",
-    "57290": "Zugdidi",
-    "57120": "Kobuleti (qobuleti)",
-    "57100": "Ozurgeti",
-    "57190": "Senaki",
-    "57000": "Samtredia (samtredia   I)",
-    "57070": "Ureki",
-    "57210": "Poti (foti)",
-    "57900": "Gori",
-    "57720": "Khashuri",
-    "57600": "Zestafoni",
-    "57510": "Rioni",
-    "57030": "Nigoiti",
-    "56040": "Mtskheta",
-    "56080": "Kaspi",
-}
+from _api_base import API_BASE, API_KEY
+from stations import STATION_NAMES
 
 def fetch_json(url, label=""):
     """Fetch JSON from a URL (uses curl via subprocess for compatibility)."""
