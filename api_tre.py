@@ -12,7 +12,6 @@ with tre.ge-specific features:
 Endpoint reference: see api-docs.md for the wider picture.
 """
 import os
-from datetime import datetime
 from typing import Any, Optional
 
 import aiohttp
@@ -89,22 +88,29 @@ def slug_to_station(slug: str) -> Optional[str]:
     return SLUG_TO_STATION.get(slug)
 
 
-def build_purchase_url(from_slug: str, to_slug: str, date_str: str) -> str:
+def build_purchase_url(from_code: str, to_code: str, date_str: str) -> str:
     """Build a tre.ge purchase/search URL.
 
     Args:
-        from_slug: Departure station slug (e.g. ``"Tbilisi"``).
-        to_slug: Arrival station slug (e.g. ``"Batumi"``).
+        from_code: Departure station code (e.g. ``"56014"``).
+        to_code: Arrival station code (e.g. ``"57151"``).
         date_str: Travel date in ``YYYY-MM-DD`` format.
 
     Returns:
         A fully-qualified URL pointing to the tre.ge search results page:
-        ``https://tre.ge/en/search?from={from_slug}&to={to_slug}&date={date}``
-        where *date* is formatted as ``DD.MM.YYYY``.
+        ``https://tre.ge/en/search?leavingPlace={from_code}&enteringPlace={to_code}&leaveDate={DD.MM.YYYY}&passengerCount=1&wcuCount=0&depVT=railway``
     """
-    # tre.ge expects the date in DD.MM.YYYY format
-    formatted_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%d.%m.%Y")
-    return f"https://tre.ge/en/search?from={from_slug}&to={to_slug}&date={formatted_date}"
+    from datetime import datetime
+
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    formatted_date = dt.strftime("%d.%m.%Y")
+    return (
+        f"https://tre.ge/en/search"
+        f"?leavingPlace={from_code}"
+        f"&enteringPlace={to_code}"
+        f"&leaveDate={formatted_date}"
+        f"&passengerCount=1&wcuCount=0&depVT=railway"
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -131,8 +137,8 @@ class TreGeApi(TicketApi):
     ``NotImplementedError``.
 
     Additional tre.ge-specific functionality:
-      - ``build_purchase_url(from_slug, to_slug, date)`` — generate a
-        tre.ge purchase URL from city-name slugs.
+      - ``build_purchase_url(from_code, to_code, date)`` — generate a
+        tre.ge purchase URL from numeric station codes.
       - ``station_to_slug(name)`` / ``slug_to_station(slug)`` — convert
         between station names and tre.ge URL slugs.
     """
@@ -167,12 +173,12 @@ class TreGeApi(TicketApi):
         return slug_to_station(slug)
 
     @staticmethod
-    def build_purchase_url(from_slug: str, to_slug: str, date_str: str) -> str:
+    def build_purchase_url(from_code: str, to_code: str, date_str: str) -> str:
         """Build a tre.ge purchase/search URL.
 
         See :func:`build_purchase_url` (module-level) for details.
         """
-        return build_purchase_url(from_slug, to_slug, date_str)
+        return build_purchase_url(from_code, to_code, date_str)
 
     # ── Internal: HTTP helper ─────────────────────────────────────────
 
