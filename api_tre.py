@@ -13,79 +13,14 @@ Endpoint reference: see api-docs.md for the wider picture.
 """
 import os
 from typing import Any, Optional
+import logging
 
 import aiohttp
 
 from _api_base import API_BASE, API_KEY, TicketApi
+from stations import STATION_SLUGS, SLUG_TO_STATION, station_to_slug, slug_to_station
 
-# ═══════════════════════════════════════════════════════════════════════
-# Station → Slug mapping for tre.ge
-# ═══════════════════════════════════════════════════════════════════════
-
-# Maps common Georgian city names to the Latin slugs used in tre.ge URLs.
-# Slugs must match what tre.ge expects in the ?from= and ?to= query params.
-# tre.ge uses simple English city names — no URL encoding of special chars.
-STATION_SLUGS: dict[str, str] = {
-    "Tbilisi": "Tbilisi",
-    "Batumi": "Batumi",
-    "Kutaisi": "Kutaisi",
-    "Kutaisi Airport": "Kutaisi%20Airport",
-    "Zugdidi": "Zugdidi",
-    "Kobuleti": "Kobuleti",
-    "Ozurgeti": "Ozurgeti",
-    "Senaki": "Senaki",
-    "Samtredia": "Samtredia",
-    "Ureki": "Ureki",
-    "Poti": "Poti",
-    "Gori": "Gori",
-    "Khashuri": "Khashuri",
-    "Zestafoni": "Zestafoni",
-    "Rioni": "Rioni",
-    "Nigoiti": "Nigoiti",
-    "Mtskheta": "Mtskheta",
-    "Kaspi": "Kaspi",
-    "Borjomi": "Borjomi",
-    "Akhaltsikhe": "Akhaltsikhe",
-}
-
-# Reverse mapping: slug → canonical station name
-SLUG_TO_STATION: dict[str, str] = {v: k for k, v in STATION_SLUGS.items()}
-
-
-def station_to_slug(name: str) -> str:
-    """Convert a station name to the tre.ge URL slug.
-
-    Accepts both exact names (e.g. ``"Tbilisi"``) and known variants.
-    Falls back to URL-encoding the input if no mapping is found.
-
-    Examples:
-        >>> station_to_slug("Tbilisi")
-        'Tbilisi'
-        >>> station_to_slug("Kutaisi Airport")
-        'Kutaisi%20Airport'
-    """
-    # Direct lookup
-    slug = STATION_SLUGS.get(name)
-    if slug is not None:
-        return slug
-
-    # Try case-insensitive lookup
-    lower = name.lower().strip()
-    for station_name, station_slug in STATION_SLUGS.items():
-        if station_name.lower() == lower:
-            return station_slug
-
-    # Fallback: URL-encode the input for use as a slug
-    import urllib.parse
-    return urllib.parse.quote(name, safe="")
-
-
-def slug_to_station(slug: str) -> Optional[str]:
-    """Convert a tre.ge URL slug back to a canonical station name.
-
-    Returns None if the slug is unknown.
-    """
-    return SLUG_TO_STATION.get(slug)
+logger = logging.getLogger(__name__)
 
 
 def build_purchase_url(from_code: str, to_code: str, date_str: str) -> str:
@@ -189,11 +124,11 @@ class TreGeApi(TicketApi):
         try:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:
-                    print(f"[tre] {label}: HTTP {resp.status}")
+                    logger.error("[tre] %s: HTTP %s", label, resp.status)
                     return None
                 return await resp.json()
         except Exception as e:
-            print(f"[tre] {label}: {e}")
+            logger.error("[tre] %s: %s", label, e)
             return None
 
     # ── Internal: URL builders ────────────────────────────────────────

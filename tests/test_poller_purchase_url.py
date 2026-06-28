@@ -116,7 +116,7 @@ def test_unknown_source_falls_back():
 
 def test_inline_url_in_notification_message():
     """The actual poller code emits the right purchase URL in its message."""
-    from poller import _format_time
+    from utils import format_time
 
     ride_num = 812
     ride = {
@@ -135,8 +135,8 @@ def test_inline_url_in_notification_message():
         ],
     }
 
-    dep = _format_time(ride.get("rideStartDate") or "")
-    arr = _format_time(ride.get("rideEndDate") or "")
+    dep = format_time(ride.get("rideStartDate") or "")
+    arr = format_time(ride.get("rideEndDate") or "")
     dur = ride.get("rideDuration", "?")
 
     # ── Default (no env) → tkt.ge/en/railway ──
