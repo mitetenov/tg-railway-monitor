@@ -21,7 +21,7 @@ DEFAULT_TICKET_SOURCE = "tktge"
 
 # ═══════════════════════ Factory ══════════════════════════════════════
 
-_SOURCE_REGISTRY: dict[str, type[TicketApi]] = {
+_SOURCE_REGISTRY: dict[str, type] = {  # type[TicketApi] after TktGeApi refactor
     "tktge": TktGeApi,
     "trege": TreGeApi,
 }
@@ -52,10 +52,6 @@ def get_ticket_api(source: Optional[str] = None) -> TicketApi:
             f"Unknown TICKET_SOURCE {src!r}. "
             f"Available: {', '.join(sorted(_SOURCE_REGISTRY))}"
         )
-
-    # Return cached singleton if type matches
-    if _api_instance is not None and isinstance(_api_instance, cls):
-        return _api_instance
 
     # Create and cache the singleton
     _api_instance = cls()
@@ -92,10 +88,10 @@ def _resolve_api() -> Any:
 async def fetch_json(session: aiohttp.ClientSession, url: str, label: str = "") -> Optional[Any]:
     """Backward-compatible alias for TktGeApi.fetch_json()."""
     api = _resolve_api()
-    if hasattr(api, "fetch_json"):
+    if isinstance(api, TktGeApi):
         return await api.fetch_json(session, url, label)
     raise NotImplementedError(
-        f"fetch_json() is not supported by {type(api).__name__}"
+        f"fetch_json() is only supported by TktGeApi, not {type(api).__name__}"
     )
 
 

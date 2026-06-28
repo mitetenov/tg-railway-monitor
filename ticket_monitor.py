@@ -29,13 +29,32 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from stations import STATION_NAMES
-from _api_base import API_BASE, API_KEY
-from utils import format_time, fmt_duration
+# ─── Constants ───────────────────────────────────────────────────────────────
 
-DEFAULT_API_KEY = API_KEY
+API_BASE = "https://gateway.tkt.ge/integrations/api/GeorgianRailway"
+DEFAULT_API_KEY = "7d8d34d1-e9af-4897-9f0f-5c36c179be77"
 DEFAULT_POLL_INTERVAL = 60  # seconds
 DEFAULT_STATE_FILE = os.path.join(os.path.dirname(__file__), "monitor_state.json")
+
+STATION_NAMES = {
+    "56014": "Tbilisi",
+    "57151": "Batumi",
+    "57450": "Kutaisi Airport",
+    "57290": "Zugdidi",
+    "57120": "Kobuleti",
+    "57100": "Ozurgeti",
+    "57190": "Senaki",
+    "57000": "Samtredia",
+    "57070": "Ureki",
+    "57210": "Poti",
+    "57900": "Gori",
+    "57720": "Khashuri",
+    "57600": "Zestafoni",
+    "57510": "Rioni",
+    "57030": "Nigoiti",
+    "56040": "Mtskheta",
+    "56080": "Kaspi",
+}
 
 CLASS_NAMES = {1: "I Class", 2: "II Class", 5: "Business"}
 CLASS_EMOJI = {1: "💺", 2: "🪑", 5: "⭐"}
@@ -262,9 +281,9 @@ class TicketMonitor:
                 if ride_num is None:
                     continue
 
-                departure = format_time(ride.get("rideStartDate", ""))
-                arrival = format_time(ride.get("rideEndDate", ""))
-                duration = fmt_duration(ride.get("rideDuration", ""))
+                departure = self._format_time(ride.get("rideStartDate", ""))
+                arrival = self._format_time(ride.get("rideEndDate", ""))
+                duration = self._fmt_duration(ride.get("rideDuration", ""))
                 from_name = route.from_station_name
                 to_name = route.to_station_name
 
@@ -272,7 +291,7 @@ class TicketMonitor:
 
                 for cls in ride.get("availableSeatsClasses", []):
                     cls_id = cls.get("seatClassId")
-                    seats = cls.get("availableNumberOfSeats") or 0
+                    seats = cls.get("availableNumberOfSeats", 0)
                     price = cls.get("moneyAmount", 0)
 
                     # Apply class filter
@@ -286,7 +305,7 @@ class TicketMonitor:
 
                     # Compare with previous state
                     prev_cls = prev_rides.get(str(ride_num), {}).get(str(cls_id))
-                    prev_seats = (prev_cls.get("seats") or 0) if prev_cls else 0
+                    prev_seats = prev_cls.get("seats", 0) if prev_cls else 0
 
                     if prev_cls is None:
                         # Brand new ticket availability
@@ -399,9 +418,6 @@ class TicketMonitor:
         except OSError as e:
             log.error("OS error fetching rides for %s→%s: %s",
                        route.from_station_code, route.to_station_code, e)
-        except Exception as e:
-            log.error("Unexpected error fetching rides for %s→%s: %s",
-                       route.from_station_code, route.to_station_code, e)
         return None
 
     # ── Internal: state persistence ──────────────────────────────────────────
@@ -436,6 +452,38 @@ class TicketMonitor:
             log.debug("Saved state to %s", self.state_file)
         except OSError as e:
             log.error("Could not save state: %s", e)
+
+    # ── Helpers ──────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _format_time(iso_str: str) -> str:
+        """Extract HH:MM from ISO datetime string."""
+        if not iso_str:
+            return "??:??"
+        try:
+            # Handle trailing Z, +04:00, etc. — find the HH:MM part after T
+            if "T" in iso_str:
+                time_part = iso_str.split("T")[1]
+                # Strip timezone offset: +04:00, Z, etc
+                for sep in ("+", "-", "Z"):
+                    if sep in time_part[2:]:  # skip the HH part
+                        time_part = time_part.split(sep)[0]
+                return time_part[:5]
+            return iso_str
+        except (IndexError, ValueError):
+            return iso_str
+
+    @staticmethod
+    def _fmt_duration(dur: str) -> str:
+        """Convert "05:12:00" to "5h 12m"."""
+        if not dur:
+            return "??:??"
+        parts = dur.split(":")
+        if len(parts) >= 2:
+            h = int(parts[0])
+            m = int(parts[1])
+            return f"{h}h {m:02d}m"
+        return dur
 
 
 # ─── Convenience helper ──────────────────────────────────────────────────────

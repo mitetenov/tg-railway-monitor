@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 # Add parent to path so we can import
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(__file__))
 from ticket_monitor import (
     TicketMonitor,
     RouteConfig,
@@ -22,7 +22,6 @@ from ticket_monitor import (
     CLASS_NAMES,
     CLASS_EMOJI,
 )
-from utils import format_time, fmt_duration
 
 
 class TestRouteConfig(unittest.TestCase):
@@ -68,20 +67,20 @@ class TestFormatting(unittest.TestCase):
         self.monitor = TicketMonitor(routes=[])
 
     def test_format_time_iso(self):
-        self.assertEqual(format_time("2026-06-27T00:30:00Z"), "00:30")
-        self.assertEqual(format_time("2026-06-27T05:42:00+04:00"), "05:42")
+        self.assertEqual(self.monitor._format_time("2026-06-27T00:30:00Z"), "00:30")
+        self.assertEqual(self.monitor._format_time("2026-06-27T05:42:00+04:00"), "05:42")
 
     def test_format_time_empty(self):
-        self.assertEqual(format_time(""), "??:??")
+        self.assertEqual(self.monitor._format_time(""), "??:??")
 
     def test_fmt_duration_full(self):
-        self.assertEqual(fmt_duration("05:12:00"), "5h 12m")
+        self.assertEqual(self.monitor._fmt_duration("05:12:00"), "5h 12m")
 
     def test_fmt_duration_single_digit(self):
-        self.assertEqual(fmt_duration("01:05:00"), "1h 05m")
+        self.assertEqual(self.monitor._fmt_duration("01:05:00"), "1h 05m")
 
     def test_fmt_duration_empty(self):
-        self.assertEqual(fmt_duration(""), "??:??")
+        self.assertEqual(self.monitor._fmt_duration(""), "??:??")
 
     def test_telegram_new_ticket(self):
         text = self.monitor._format_telegram(

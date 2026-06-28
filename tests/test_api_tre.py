@@ -78,48 +78,31 @@ class TestPurchaseURL:
     """Verify purchase URL generation."""
 
     def test_basic_url(self):
-        """Basic Tbilisi → Batumi URL with station codes."""
-        url = build_purchase_url("56014", "57151", "2026-06-29")
-        assert url == (
-            "https://tre.ge/en/search"
-            "?leavingPlace=56014"
-            "&enteringPlace=57151"
-            "&leaveDate=29.06.2026"
-            "&passengerCount=1&wcuCount=0&depVT=railway"
-        )
+        """Basic Tbilisi → Batumi URL."""
+        url = build_purchase_url("Tbilisi", "Batumi", "2026-07-15")
+        assert url == "https://tre.ge/en/search?from=Tbilisi&to=Batumi&date=2026-07-15"
 
-    def test_url_with_codes(self):
-        """URL with different station codes."""
-        url = build_purchase_url("56014", "57413", "2026-07-15")
-        assert "leavingPlace=56014" in url
-        assert "enteringPlace=57413" in url
-        assert "leaveDate=15.07.2026" in url
-        assert "passengerCount=1" in url
-        assert "wcuCount=0" in url
-        assert "depVT=railway" in url
+    def test_url_with_encoded_slug(self):
+        """URL with URL-encoded slug (Kutaisi%20Airport)."""
+        url = build_purchase_url("Kutaisi%20Airport", "Tbilisi", "2026-06-28")
+        assert "from=Kutaisi%20Airport" in url
+        assert "to=Tbilisi" in url
+        assert "date=2026-06-28" in url
 
     def test_url_static_method(self):
         """TreGeApi.build_purchase_url static method works."""
-        url = TreGeApi.build_purchase_url("57151", "56014", "2026-08-01")
+        url = TreGeApi.build_purchase_url("Zugdidi", "Poti", "2026-08-01")
         assert url.startswith("https://tre.ge/en/search")
-        assert "leavingPlace=57151" in url
-        assert "enteringPlace=56014" in url
-        assert "leaveDate=01.08.2026" in url
-        assert "passengerCount=1" in url
+        assert "from=Zugdidi" in url
+        assert "to=Poti" in url
+        assert "date=2026-08-01" in url
 
-    def test_date_conversion(self):
-        """Date is correctly converted from YYYY-MM-DD to DD.MM.YYYY."""
-        url = build_purchase_url("56014", "57151", "2026-12-25")
-        assert "leaveDate=25.12.2026" in url
-
-    def test_edge_dates(self):
-        """Edge cases for date conversion."""
-        # Single-digit day and month
-        url = build_purchase_url("56014", "57151", "2026-01-05")
-        assert "leaveDate=05.01.2026" in url
-        # End of year
-        url = build_purchase_url("56014", "57151", "2026-12-31")
-        assert "leaveDate=31.12.2026" in url
+    def test_url_chaining_from_slug(self):
+        """Chaining station_to_slug → build_purchase_url."""
+        slug = station_to_slug("Kutaisi Airport")
+        url = build_purchase_url(slug, "Tbilisi", "2026-07-15")
+        assert "from=Kutaisi%20Airport" in url
+        assert "to=Tbilisi" in url
 
 
 # ═══════════════════════════════════════════════════════════════════════

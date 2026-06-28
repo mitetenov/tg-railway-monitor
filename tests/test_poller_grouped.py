@@ -1,6 +1,6 @@
 """Tests for grouped notification format in poller.py.
 
-Verifies that format_time works correctly and that the grouping
+Verifies that _format_time works correctly and that the grouping
 logic produces one notification per ride with all classes listed
 using English class names (I Class, II Class, Business).
 """
@@ -10,28 +10,32 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from ticket_monitor import CLASS_NAMES
-from utils import format_time
 
 
-# ── format_time tests ───────────────────────────────────────────────
+# ── _format_time tests ───────────────────────────────────────────────
 
 
 def test_format_time_basic():
     """Standard ISO string returns HH:MM."""
-    assert format_time("2026-06-27T00:30:00Z") == "00:30"
-    assert format_time("2026-06-27T05:42:00+04:00") == "05:42"
-    assert format_time("2026-06-27T12:15:00") == "12:15"
+    from poller import _format_time
+    assert _format_time("2026-06-27T00:30:00Z") == "00:30"
+    assert _format_time("2026-06-27T05:42:00+04:00") == "05:42"
+    assert _format_time("2026-06-27T12:15:00") == "12:15"
 
 
 def test_format_time_empty():
     """Empty string returns ??:??."""
-    assert format_time("") == "??:??"
+    from poller import _format_time
+    assert _format_time("") == "??:??"
+    # (None won't reach _format_time — poller guards with `or ""`)
 
 
 def test_format_time_bogus():
     """Non-ISO strings fall back to the input."""
-    assert format_time("hello") == "hello"
-    assert format_time("05:12:00") == "05:12:00"
+    from poller import _format_time
+    # No 'T' → returns as-is
+    assert _format_time("hello") == "hello"
+    assert _format_time("05:12:00") == "05:12:00"
 
 
 # ── _notified_key tests ──────────────────────────────────────────────
@@ -154,6 +158,7 @@ def test_grouping_multiple_rides():
 
 def test_grouped_message_format():
     """Verify the rendered message uses English class names and includes purchase links."""
+    from poller import _format_time
 
     ride_num = 812
     from_code = "56014"
@@ -169,8 +174,8 @@ def test_grouped_message_format():
         (CLASS_NAMES.get(5), 7, 126),
     ]
 
-    dep = format_time(ride.get("rideStartDate") or "")
-    arr = format_time(ride.get("rideEndDate") or "")
+    dep = _format_time(ride.get("rideStartDate") or "")
+    arr = _format_time(ride.get("rideEndDate") or "")
     dur = ride.get("rideDuration", "?")
 
     lines = [

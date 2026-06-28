@@ -24,7 +24,6 @@ from telegram.ext import (
 import poller
 from api import get_stations
 from config_manager import load_config, save_config, is_config_complete
-from stations import FALLBACK_STATIONS, STATION_SLUGS
 
 # ── logging ──────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -42,6 +41,27 @@ if not BOT_TOKEN:
 _stations: list[dict] = []        # raw from API
 _station_index: dict[str, dict] = {}  # code -> station
 STATIONS_PER_PAGE = 8
+
+# Fallback station list if API fails
+FALLBACK_STATIONS: list[dict] = [
+    {"code": "56014", "stationName": "Tbilisi", "isPopular": True},
+    {"code": "57151", "stationName": "Batumi", "isPopular": True},
+    {"code": "57450", "stationName": "Kutaisi Airport", "isPopular": True},
+    {"code": "57290", "stationName": "Zugdidi", "isPopular": True},
+    {"code": "57120", "stationName": "Kobuleti", "isPopular": True},
+    {"code": "57100", "stationName": "Ozurgeti", "isPopular": True},
+    {"code": "57190", "stationName": "Senaki", "isPopular": True},
+    {"code": "57000", "stationName": "Samtredia", "isPopular": True},
+    {"code": "57070", "stationName": "Ureki", "isPopular": False},
+    {"code": "57210", "stationName": "Poti", "isPopular": True},
+    {"code": "57900", "stationName": "Gori", "isPopular": False},
+    {"code": "57720", "stationName": "Khashuri", "isPopular": False},
+    {"code": "57600", "stationName": "Zestafoni", "isPopular": False},
+    {"code": "57510", "stationName": "Rioni", "isPopular": False},
+    {"code": "57030", "stationName": "Nigoiti", "isPopular": False},
+    {"code": "56040", "stationName": "Mtskheta", "isPopular": False},
+    {"code": "56080", "stationName": "Kaspi", "isPopular": False},
+]
 
 
 async def load_stations() -> None:
