@@ -80,14 +80,14 @@ class TestPurchaseURL:
     def test_basic_url(self):
         """Basic Tbilisi → Batumi URL."""
         url = build_purchase_url("Tbilisi", "Batumi", "2026-07-15")
-        assert url == "https://tre.ge/en/search?from=Tbilisi&to=Batumi&date=2026-07-15"
+        assert url == "https://tre.ge/en/search?from=Tbilisi&to=Batumi&date=15.07.2026"
 
     def test_url_with_encoded_slug(self):
         """URL with URL-encoded slug (Kutaisi%20Airport)."""
         url = build_purchase_url("Kutaisi%20Airport", "Tbilisi", "2026-06-28")
         assert "from=Kutaisi%20Airport" in url
         assert "to=Tbilisi" in url
-        assert "date=2026-06-28" in url
+        assert "date=28.06.2026" in url
 
     def test_url_static_method(self):
         """TreGeApi.build_purchase_url static method works."""
@@ -95,7 +95,7 @@ class TestPurchaseURL:
         assert url.startswith("https://tre.ge/en/search")
         assert "from=Zugdidi" in url
         assert "to=Poti" in url
-        assert "date=2026-08-01" in url
+        assert "date=01.08.2026" in url
 
     def test_url_chaining_from_slug(self):
         """Chaining station_to_slug → build_purchase_url."""

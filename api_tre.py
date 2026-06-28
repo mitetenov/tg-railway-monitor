@@ -12,6 +12,7 @@ with tre.ge-specific features:
 Endpoint reference: see api-docs.md for the wider picture.
 """
 import os
+from datetime import datetime
 from typing import Any, Optional
 
 import aiohttp
@@ -99,8 +100,11 @@ def build_purchase_url(from_slug: str, to_slug: str, date_str: str) -> str:
     Returns:
         A fully-qualified URL pointing to the tre.ge search results page:
         ``https://tre.ge/en/search?from={from_slug}&to={to_slug}&date={date}``
+        where *date* is formatted as ``DD.MM.YYYY``.
     """
-    return f"https://tre.ge/en/search?from={from_slug}&to={to_slug}&date={date_str}"
+    # tre.ge expects the date in DD.MM.YYYY format
+    formatted_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%d.%m.%Y")
+    return f"https://tre.ge/en/search?from={from_slug}&to={to_slug}&date={formatted_date}"
 
 
 # ═══════════════════════════════════════════════════════════════════════

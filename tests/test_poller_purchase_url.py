@@ -58,7 +58,7 @@ def test_trege_source_without_stations():
     os.environ["TICKET_SOURCE"] = "tre.ge"
     try:
         url = _resolve_purchase_url(from_station="", to_station="", date="2026-06-28")
-        expected = "https://tre.ge/en/search?from=&to=&date=2026-06-28"
+        expected = "https://tre.ge/en/search?from=&to=&date=28.06.2026"
         assert url == expected, f"Got {url}"
     finally:
         del os.environ["TICKET_SOURCE"]
@@ -73,7 +73,7 @@ def test_trege_source_with_stations():
             to_station="Batumi",
             date="2026-06-28",
         )
-        expected = "https://tre.ge/en/search?from=Tbilisi&to=Batumi&date=2026-06-28"
+        expected = "https://tre.ge/en/search?from=Tbilisi&to=Batumi&date=28.06.2026"
         assert url == expected, f"Got {url}"
     finally:
         del os.environ["TICKET_SOURCE"]
@@ -90,7 +90,7 @@ def test_trege_with_url_encoded_station():
         )
         expected = (
             "https://tre.ge/en/search"
-            "?from=Tbilisi&to=Kutaisi%20Airport&date=2026-06-28"
+            "?from=Tbilisi&to=Kutaisi%20Airport&date=28.06.2026"
         )
         assert url == expected, f"Got {url}"
     finally:
@@ -163,7 +163,7 @@ def test_inline_url_in_notification_message():
             purchase_url = TreGeApi.build_purchase_url(from_slug, to_slug, "2026-06-27")
         else:
             purchase_url = "https://tkt.ge/en/railway"
-        expected = "https://tre.ge/en/search?from=Tbilisi&to=Batumi&date=2026-06-27"
+        expected = "https://tre.ge/en/search?from=Tbilisi&to=Batumi&date=27.06.2026"
         assert purchase_url == expected, f"Got {purchase_url}"
     finally:
         del os.environ["TICKET_SOURCE"]
