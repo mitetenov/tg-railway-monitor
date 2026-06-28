@@ -6,12 +6,14 @@ import asyncio
 import logging
 import os
 import re
+import warnings
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import aiohttp
 from dotenv import load_dotenv
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.warnings import PTBUserWarning
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -482,6 +484,10 @@ async def post_init(application: Application) -> None:
 
 def main() -> None:
     """Build and run the bot."""
+    # Suppress informational PTBUserWarning about CallbackQueryHandler tracking
+    # — our conversations mix CommandHandler and CallbackQueryHandler intentionally,
+    # and the per_user/per_chat tracking handles callback queries correctly.
+    warnings.filterwarnings("ignore", category=PTBUserWarning)
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
     # ── Simple commands ──
@@ -500,7 +506,6 @@ def main() -> None:
         fallbacks=[CallbackQueryHandler(cancel_handler, pattern="^cancel$"),
                    CommandHandler("setroute", setroute_entry)],
         map_to_parent={ConversationHandler.END: ConversationHandler.END},
-        per_message=True,
     )
     app.add_handler(setroute_conv)
 
@@ -514,7 +519,6 @@ def main() -> None:
             ],
         },
         fallbacks=[CommandHandler("setdate", setdate_entry)],
-        per_message=True,
     )
     app.add_handler(setdate_conv)
 
@@ -526,7 +530,6 @@ def main() -> None:
         },
         fallbacks=[CallbackQueryHandler(cancel_handler, pattern="^cancel$"),
                    CommandHandler("setclass", setclass_entry)],
-        per_message=True,
     )
     app.add_handler(setclass_conv)
 
