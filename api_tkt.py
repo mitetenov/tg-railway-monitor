@@ -8,15 +8,16 @@ API base: https://gateway.tkt.ge/integrations/api/GeorgianRailway
 See api-docs.md for full endpoint reference.
 """
 from typing import Any, Optional
+import logging
 
 import aiohttp
 
-# ── API constants ────────────────────────────────────────────────────
-API_BASE = "https://gateway.tkt.ge/integrations/api/GeorgianRailway"
-API_KEY = "7d8d34d1-e9af-4897-9f0f-5c36c179be77"  # public key embedded in client-side JS
+from _api_base import TicketApi, API_BASE, API_KEY
+
+logger = logging.getLogger(__name__)
 
 
-class TktGeApi:
+class TktGeApi(TicketApi):
     """Concrete implementation for the tkt.ge Georgian Railway API.
 
     Three core endpoints are available:
@@ -46,11 +47,11 @@ class TktGeApi:
         try:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
                 if resp.status != 200:
-                    print(f"[api] {label}: HTTP {resp.status}")
+                    logger.error("[api] %s: HTTP %s", label, resp.status)
                     return None
                 return await resp.json()
         except Exception as e:
-            print(f"[api] {label}: {e}")
+            logger.error("[api] %s: %s", label, e)
             return None
 
     def _build_rides_url(

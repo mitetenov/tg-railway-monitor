@@ -20,3 +20,4 @@ venv/
 # Runtime data
 data/
 monitor_state.json
+config.json

@@ -15,6 +15,7 @@ from api import get_available_rides
 from api_tre import TreGeApi
 from config_manager import load_config
 from ticket_monitor import CLASS_NAMES
+from utils import format_time
 
 logger = logging.getLogger(__name__)
 
@@ -26,29 +27,18 @@ _running_tasks: Dict[int, asyncio.Task] = {}
 # Track already-notified ride+class combos so we don't spam
 _notified: Dict[int, set] = {}
 
+# Anti-spam expiry: after this many poll cycles the notified history for a
+# chat is cleared.  Default 60 × 60 s = 1 hour.  This prevents unbounded
+# memory growth in long-running bots while still deduplicating within a
+# reasonable window.
+_NOTIFIED_TTL_CYCLES = 60
+
 # Pause state per chat — when True the loop stays alive but skips checks
 _paused: Dict[int, bool] = {}
 
 
 def _notified_key(ride_number: int, class_name: str) -> str:
     return f"{ride_number}:{class_name}"
-
-
-def _format_time(iso_str: str) -> str:
-    """Extract HH:MM from ISO datetime string, handling timezone offsets."""
-    if not iso_str:
-        return "??:??"
-    try:
-        if "T" in iso_str:
-            time_part = iso_str.split("T")[1]
-            # Strip timezone offset: +04:00, Z, etc
-            for sep in ("+", "-", "Z"):
-                if sep in time_part[2:]:  # skip the HH part
-                    time_part = time_part.split(sep)[0]
-            return time_part[:5]
-        return iso_str
-    except (IndexError, ValueError):
-        return iso_str
 
 
 async def _check_and_notify(bot: Bot, chat_id: int) -> None:
@@ -91,15 +81,16 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         classes_raw = ride.get("availableSeatsClasses", [])
         for cls in classes_raw:
             cls_name = CLASS_NAMES.get(cls.get("seatClassId"), "")
-            seats = cls.get("availableNumberOfSeats", 0)
+            seats = cls.get("availableNumberOfSeats") or 0
             price = cls.get("moneyAmount", "?")
 
             # Apply class filter
             if seat_class != "Any":
-                # Normalise: "Business" → "business", "I" → "i", "II" → "ii"
-                target = seat_class.lower().strip()
-                current = cls_name.lower().strip()
-                if target not in current and current not in target:
+                # Map user-facing class names to numeric IDs for exact matching
+                _CLASS_FILTER_MAP = {"I": 1, "II": 2, "Business": 5}
+                target_id = _CLASS_FILTER_MAP.get(seat_class, None)
+                cls_id = cls.get("seatClassId")
+                if target_id is not None and cls_id != target_id:
                     continue
 
             if seats is not None and seats > 0:
@@ -121,8 +112,8 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         "",
     ]
     for ride_num, (ride, class_list) in list(rides_with_new.items())[:5]:
-        dep = _format_time(ride.get("rideStartDate") or "")
-        arr = _format_time(ride.get("rideEndDate") or "")
+        dep = format_time(ride.get("rideStartDate") or "")
+        arr = format_time(ride.get("rideEndDate") or "")
         dur = ride.get("rideDuration", "?")
         lines.append(f"🚆 *Ride #{ride_num}*  {dep} → {arr} ({dur})")
         # Build purchase link for this ride
@@ -159,12 +150,19 @@ async def _poller_loop(bot: Bot, chat_id: int) -> None:
     API check and notification.
     """
     logger.info("Started polling for chat %d", chat_id)
+    cycle = 0
     try:
         while True:
             if not _paused.get(chat_id, False):
                 await _check_and_notify(bot, chat_id)
             else:
                 logger.debug("Polling paused for chat %d", chat_id)
+
+            cycle += 1
+            if cycle >= _NOTIFIED_TTL_CYCLES:
+                _notified.pop(chat_id, None)
+                cycle = 0
+
             await asyncio.sleep(MONITOR_INTERVAL)
     except asyncio.CancelledError:
         logger.info("Polling cancelled for chat %d", chat_id)
@@ -177,7 +175,10 @@ async def _poller_loop(bot: Bot, chat_id: int) -> None:
 def start(bot: Bot, chat_id: int) -> None:
     """Start / restart polling for a chat."""
     stop(chat_id)
-    loop = asyncio.get_event_loop()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
     task = loop.create_task(_poller_loop(bot, chat_id))
     _running_tasks[chat_id] = task
     logger.info("Poller started for chat %d", chat_id)
