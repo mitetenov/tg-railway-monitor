@@ -500,6 +500,7 @@ def main() -> None:
         fallbacks=[CallbackQueryHandler(cancel_handler, pattern="^cancel$"),
                    CommandHandler("setroute", setroute_entry)],
         map_to_parent={ConversationHandler.END: ConversationHandler.END},
+        per_message=True,
     )
     app.add_handler(setroute_conv)
 
@@ -513,6 +514,7 @@ def main() -> None:
             ],
         },
         fallbacks=[CommandHandler("setdate", setdate_entry)],
+        per_message=True,
     )
     app.add_handler(setdate_conv)
 
@@ -524,6 +526,7 @@ def main() -> None:
         },
         fallbacks=[CallbackQueryHandler(cancel_handler, pattern="^cancel$"),
                    CommandHandler("setclass", setclass_entry)],
+        per_message=True,
     )
     app.add_handler(setclass_conv)
 
