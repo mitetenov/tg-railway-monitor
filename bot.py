@@ -170,6 +170,8 @@ async def cmd_status(update: Update, _context) -> None:
 
     lines = [t("status.title"), ""]
 
+    reply_markup = None
+
     if config:
         lines.append(t("status.route", from_name=config.get("from_station", "?"),
                        to_name=config.get("to_station", "?")))
@@ -182,6 +184,11 @@ async def cmd_status(update: Update, _context) -> None:
         elif is_config_complete(config):
             lines.append(t("status.config_complete_not_started"))
             lines.append(t("status.config_complete_hint"))
+            keyboard = [[InlineKeyboardButton(
+                t("status.start_search_button"),
+                callback_data="start_search",
+            )]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
         else:
             lines.append(t("status.config_incomplete"))
     else:
@@ -191,15 +198,29 @@ async def cmd_status(update: Update, _context) -> None:
     lines.append("")
     lines.append(t("status.active_monitors", count=poller.active_count()))
 
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    await update.message.reply_text(
+        "\n".join(lines),
+        parse_mode="Markdown",
+        reply_markup=reply_markup,
+    )
 
 
 async def cmd_stop(update: Update, _context) -> None:
     """Stop monitoring for this chat."""
     chat_id = update.effective_chat.id
     poller.stop(chat_id)
+    config = load_config(chat_id)
     t = get_user_translation(chat_id, update.effective_user)
-    await update.message.reply_text(t("stop.stopped"))
+    if is_config_complete(config):
+        keyboard = [[InlineKeyboardButton(
+            t("stop.start_search_button"), callback_data="start_search"
+        )]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(
+            t("stop.stopped_with_button"), reply_markup=reply_markup
+        )
+    else:
+        await update.message.reply_text(t("stop.stopped"))
 
 
 async def cmd_resume(update: Update, _context) -> None:
@@ -207,6 +228,19 @@ async def cmd_resume(update: Update, _context) -> None:
     chat_id = update.effective_chat.id
     success, msg = poller.resume(_context.bot, chat_id)
     await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def cmd_status_start_search(update: Update, _context) -> None:
+    """Handle 'Start search' button on /status message.
+
+    Triggers the same action as /resume, then updates the status message.
+    """
+    query = update.callback_query
+    await query.answer()
+    chat_id = update.effective_chat.id
+    t = get_user_translation(chat_id, update.effective_user)
+    success, msg = poller.resume(_context.bot, chat_id)
+    await query.edit_message_text(msg, parse_mode="Markdown")
 
 
 # ═══════════════════ /setroute Conversation ══════════════════════════
@@ -338,6 +372,14 @@ async def to_station_handler(update: Update, context) -> Optional[int]:
         t = get_user_translation(chat_id, update.effective_user)
         msg = t("route.saved", from_name=from_name, to_name=to_name)
         await query.edit_message_text(msg, parse_mode="Markdown")
+
+        # If config is now complete (date + seat_class already set), auto-start
+        if is_config_complete(config):
+            poller.start(context.bot, chat_id)
+            await query.message.reply_text(t("route.monitoring_started"))
+        else:
+            await query.message.reply_text(t("route.incomplete_hint"))
+
         return ConversationHandler.END
 
     return TO_STATION
@@ -631,6 +673,8 @@ def main() -> None:
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("resume", cmd_resume))
 
+    # ── Inline callbacks ──
+    app.add_handler(CallbackQueryHandler(cmd_status_start_search, pattern="^start_search$"))
     # ── Language selection callback (from /lang inline keyboard) ──
     app.add_handler(CallbackQueryHandler(cmd_lang_callback, pattern=r"^lang_(en|ru)$"))
 
