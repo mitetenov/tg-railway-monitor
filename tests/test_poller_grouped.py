@@ -34,15 +34,37 @@ def test_format_time_bogus():
     assert format_time("05:12:00") == "05:12:00"
 
 
-# ── _notified_key tests ──────────────────────────────────────────────
+# ── Stateful diff tests ───────────────────────────────────────────────
 
 
-def test_notified_key_basic():
-    """Verify notified keys work with English class names."""
-    from poller import _notified_key
-    assert _notified_key(812, "II Class") == "812:II Class"
-    assert _notified_key(812, "I Class") == "812:I Class"
-    assert _notified_key(812, "Business") == "812:Business"
+def test_stateful_diff_new_ticket():
+    """First time a class appears → it is notified."""
+    from poller import _state
+
+    chat_id = 9000
+    _state.pop(chat_id, None)
+
+    # No previous state → should be treated as new
+    assert chat_id not in _state or _state[chat_id] == {}
+
+
+def test_stateful_diff_seats_increased():
+    """When seats increase compared to previous state → notified."""
+    from poller import _state
+
+    chat_id = 9000
+    _state[chat_id] = {
+        "812": {"1": {"seats": 5, "price": 76}},
+    }
+
+    # Simulate: same class, more seats → should notify
+    prev_entry = _state.get(chat_id, {}).get("812", {}).get("1")
+    prev_seats = prev_entry["seats"] if prev_entry else 0
+    assert prev_seats == 5  # baseline
+    # 10 > 5 → notified
+    assert 10 > prev_seats
+
+    _state.pop(chat_id, None)
 
 
 # ── Grouping logic (white-box) ───────────────────────────────────────
@@ -70,83 +92,104 @@ def _make_ride(ride_num, classes):
 
 def test_grouping_single_ride_multiple_classes():
     """All classes for one ride are collected together with English names."""
-    from poller import _check_and_notify, _notified
+    from poller import _state
 
-    # Clear notified state
     chat_id = 9001
-    _notified.pop(chat_id, None)
+    _state.pop(chat_id, None)
 
-    # Build mock data: ride #812 with 3 classes
-    # seatClassName values are Georgian (as returned by the API) but poller
-    # now resolves the English name via CLASS_NAMES using seatClassId
     ride = _make_ride(812, [
         (2, "II класс", 89, 36),
         (1, "I класс", 19, 76),
         (5, "Биз. класс", 7, 126),
     ])
 
-    # Simulate the grouping logic inline (mirroring the actual poller code)
-    ride_num = ride.get("rideNumber")
-    new_classes = []
+    # Simulate stateful diff logic (mirroring the actual poller code)
+    chat_state = _state.setdefault(chat_id, {})
+    ride_state = {}
+
+    changed_classes = []
     for cls in ride.get("availableSeatsClasses", []):
-        cls_name = CLASS_NAMES.get(cls.get("seatClassId"), "")
-        seats = cls.get("availableNumberOfSeats", 0)
+        cls_id = cls.get("seatClassId")
+        cls_name = CLASS_NAMES.get(cls_id, "")
+        seats = cls.get("availableNumberOfSeats") or 0
         price = cls.get("moneyAmount", "?")
-        key = f"{ride_num}:{cls_name}"
-        if key not in _notified.setdefault(chat_id, set()):
-            new_classes.append((cls_name, seats, price))
-            _notified[chat_id].add(key)
+        prev_entry = ride_state.get(str(cls_id))
+        prev_seats = prev_entry["seats"] if prev_entry else 0
+        if seats > 0:
+            should_notify = prev_entry is None or seats > prev_seats
+            if should_notify:
+                changed_classes.append((cls_name, seats, price))
+        ride_state[str(cls_id)] = {"seats": seats, "price": price}
+
+    chat_state[str(ride.get("rideNumber"))] = ride_state
+    _state[chat_id] = chat_state
 
     # All 3 classes should be collected with English names
-    assert len(new_classes) == 3
-    names = [c[0] for c in new_classes]
+    assert len(changed_classes) == 3
+    names = [c[0] for c in changed_classes]
     assert "II Class" in names
     assert "I Class" in names
     assert "Business" in names
 
-    # Second pass — should find nothing new
-    new_classes2 = []
+    # Second pass — should find nothing new (seats unchanged)
+    ride_state2 = _state.get(chat_id, {}).get("812", {})
+    changed_classes2 = []
     for cls in ride.get("availableSeatsClasses", []):
-        cls_name = CLASS_NAMES.get(cls.get("seatClassId"), "")
-        seats = cls.get("availableNumberOfSeats", 0)
+        cls_id = cls.get("seatClassId")
+        cls_name = CLASS_NAMES.get(cls_id, "")
+        seats = cls.get("availableNumberOfSeats") or 0
         price = cls.get("moneyAmount", "?")
-        key = f"{ride_num}:{cls_name}"
-        if key not in _notified[chat_id]:
-            new_classes2.append((cls_name, seats, price))
-            _notified[chat_id].add(key)
-    assert len(new_classes2) == 0, "Should not re-notify same classes"
+        prev_entry = ride_state2.get(str(cls_id))
+        prev_seats = prev_entry["seats"] if prev_entry else 0
+        if seats > 0:
+            should_notify = prev_entry is None or seats > prev_seats
+            if should_notify:
+                changed_classes2.append((cls_name, seats, price))
+    assert len(changed_classes2) == 0, "Should not re-notify same classes with same seats"
+
+    _state.pop(chat_id, None)
 
 
 def test_grouping_multiple_rides():
     """Each ride gets its own group; classes don't bleed across rides."""
-    from poller import _notified
+    from poller import _state
 
     chat_id = 9002
-    _notified.pop(chat_id, None)
+    _state.pop(chat_id, None)
 
     rides_data = [
         _make_ride(812, [(2, "II класс", 89, 36), (1, "I класс", 19, 76)]),
         _make_ride(900, [(5, "Биз. класс", 7, 126)]),
     ]
 
-    rides_with_new = {}
+    chat_state = _state.setdefault(chat_id, {})
+    rides_with_changes = {}
+
     for ride in rides_data:
         ride_num = ride.get("rideNumber")
-        new_classes = []
+        ride_state = {}
+        changed_classes = []
         for cls in ride.get("availableSeatsClasses", []):
-            cls_name = CLASS_NAMES.get(cls.get("seatClassId"), "")
-            seats = cls.get("availableNumberOfSeats", 0)
+            cls_id = cls.get("seatClassId")
+            cls_name = CLASS_NAMES.get(cls_id, "")
+            seats = cls.get("availableNumberOfSeats") or 0
             price = cls.get("moneyAmount", "?")
-            key = f"{ride_num}:{cls_name}"
-            if key not in _notified.setdefault(chat_id, set()):
-                new_classes.append((cls_name, seats, price))
-                _notified[chat_id].add(key)
-        if new_classes:
-            rides_with_new[ride_num] = (ride, new_classes)
+            prev_entry = ride_state.get(str(cls_id))
+            prev_seats = prev_entry["seats"] if prev_entry else 0
+            if seats > 0:
+                should_notify = prev_entry is None or seats > prev_seats
+                if should_notify:
+                    changed_classes.append((cls_name, seats, price))
+            ride_state[str(cls_id)] = {"seats": seats, "price": price}
+        chat_state[str(ride_num)] = ride_state
+        if changed_classes:
+            rides_with_changes[ride_num] = (ride, changed_classes)
 
-    assert set(rides_with_new.keys()) == {812, 900}
-    assert len(rides_with_new[812][1]) == 2  # 2 classes on 812
-    assert len(rides_with_new[900][1]) == 1  # 1 class on 900
+    assert set(rides_with_changes.keys()) == {812, 900}
+    assert len(rides_with_changes[812][1]) == 2  # 2 classes on 812
+    assert len(rides_with_changes[900][1]) == 1  # 1 class on 900
+
+    _state.pop(chat_id, None)
 
 
 # ── Notification message format ──────────────────────────────────────

@@ -6,15 +6,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import config_manager as cm
 
-# ── notified-key helper tests ────────────────────────────────────────
+# ── state helper tests ────────────────────────────────────────────────
 
 
-def test_notified_key_format():
-    """Verify _notified_key produces deterministic keys."""
-    from poller import _notified_key
-    assert _notified_key(812, "Business") == "812:Business"
-    assert _notified_key(812, "I") == "812:I"
-    assert _notified_key(0, "") == "0:"
+def test_state_initially_empty():
+    """Verify _state dict starts empty."""
+    from poller import _state
+    assert isinstance(_state, dict)
+    assert len(_state) == 0
 
 
 # ── _check_and_notify filtering ──────────────────────────────────────
@@ -125,17 +124,17 @@ def test_resume_already_running():
     os.remove(os.path.join(data_dir, f"{chat_id}.json"))
 
 
-def test_stop_clears_pause_and_notified():
-    """stop() resets both pause and notified state for a chat."""
-    from poller import pause, is_paused, stop, _paused, _notified
+def test_stop_clears_pause_and_state():
+    """stop() resets both pause and state for a chat."""
+    from poller import pause, is_paused, stop, _paused, _state
 
     chat_id = 99904
-    _notified.setdefault(chat_id, set()).add("1:Test")
+    _state.setdefault(chat_id, {})["812"] = {"5": {"seats": 3, "price": 126}}
     pause(chat_id)
 
     assert is_paused(chat_id)
-    assert chat_id in _notified
+    assert chat_id in _state
 
     stop(chat_id)
     assert not is_paused(chat_id)
-    assert chat_id not in _notified
+    assert chat_id not in _state

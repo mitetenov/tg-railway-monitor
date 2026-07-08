@@ -1,7 +1,7 @@
 """Negative / edge-case tests for poller.py.
 
 Covers: empty API responses, zero seats, class filter edge cases,
-_notified memory accumulation, notification errors, pause/resume edge
+_state memory, notification errors, pause/resume edge
 cases, concurrent state access, malformed ride data.
 """
 import json
@@ -15,10 +15,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import poller
 from poller import (
-    _notified,
+    _state,
     _paused,
     _running_tasks,
-    _notified_key,
     _check_and_notify,
     start,
     stop,
@@ -60,30 +59,6 @@ class TestFormatTimeNegative:
     def test_time_with_colon_in_timezone(self):
         result = format_time("2026-06-27T08:15:00+04:00")
         assert result == "08:15"
-
-
-# ═══════════════════════ _notified_key ═════════════════════════════════
-
-
-class TestNotifiedKeyNegative:
-
-    def test_same_ride_same_class_same_key(self):
-        assert _notified_key(812, "Business") == _notified_key(812, "Business")
-
-    def test_different_rides_same_class_different_keys(self):
-        assert _notified_key(812, "Business") != _notified_key(813, "Business")
-
-    def test_same_ride_different_class_different_keys(self):
-        assert _notified_key(812, "I Class") != _notified_key(812, "II Class")
-
-    def test_empty_class_name(self):
-        key = _notified_key(812, "")
-        assert key == "812:"
-
-    def test_colon_in_class_name(self):
-        """Colons in class names produce ambiguous keys."""
-        key = _notified_key(812, "I:Class")
-        assert key == "812:I:Class"
 
 
 # ═══════════════════════ _running_tasks / active_count ═════════════════
@@ -146,49 +121,53 @@ class TestPauseResumeNegative:
 
     def test_stop_cleans_all_state(self):
         chat_id = 70003
-        _notified[chat_id] = {"1:Test", "2:Test"}
+        _state[chat_id] = {"812": {"1": {"seats": 5, "price": 76}}}
         _paused[chat_id] = True
         stop(chat_id)
-        assert chat_id not in _notified
+        assert chat_id not in _state
         assert chat_id not in _paused
         assert chat_id not in _running_tasks
 
 
-# ═══════════════════════ _notified Memory Accumulation ═════════════════
+# ═══════════════════════ _state Memory ══════════════════════════════════
 
 
-class TestNotifiedMemory:
-    """Document the memory leak: _notified grows unbounded."""
+class TestStateMemory:
+    """State dict persists previous seat counts for diffing."""
 
     def setup_method(self):
-        for cid in list(_notified.keys()):
-            _notified.pop(cid, None)
+        for cid in list(_state.keys()):
+            _state.pop(cid, None)
 
-    def test_notified_grows_with_each_new_key(self):
+    def test_state_tracks_seat_counts(self):
         chat_id = 80001
-        _notified.pop(chat_id, None)
+        _state.pop(chat_id, None)
 
-        initial_size = len(_notified.get(chat_id, set()))
-        assert initial_size == 0
-
-        # Simulate many notifications
+        # Simulate many ride+class combos
+        chat_state = {}
         for i in range(100):
-            key = _notified_key(i, "Business")
-            _notified.setdefault(chat_id, set()).add(key)
+            ride_key = str(i)
+            chat_state[ride_key] = {"5": {"seats": i % 10, "price": 126}}
 
-        assert len(_notified[chat_id]) == 100
+        _state[chat_id] = chat_state
 
-        # After stop, notified is cleared
+        assert chat_id in _state
+        assert len(_state[chat_id]) == 100
+
+        # After stop, state is cleared
         stop(chat_id)
-        assert chat_id not in _notified
+        assert chat_id not in _state
 
-    def test_stale_notified_cleared_on_stop(self):
-        """stop() clears notified state (important for restart)."""
+    def test_state_cleared_on_stop(self):
+        """stop() clears state (important for restart)."""
         chat_id = 80002
-        _notified.setdefault(chat_id, set()).update({"1:A", "2:B", "3:C"})
-        assert len(_notified[chat_id]) == 3
+        _state[chat_id] = {
+            "812": {"1": {"seats": 5, "price": 76}},
+            "900": {"5": {"seats": 3, "price": 126}},
+        }
+        assert chat_id in _state
         stop(chat_id)
-        assert chat_id not in _notified
+        assert chat_id not in _state
 
 
 # ═══════════════════════ _check_and_notify Mocked ═══════════════════════
@@ -253,8 +232,8 @@ class TestCheckAndNotifyNegative:
     def setup_method(self):
         self.data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
         os.makedirs(self.data_dir, exist_ok=True)
-        for cid in list(_notified.keys()):
-            _notified.pop(cid, None)
+        for cid in list(_state.keys()):
+            _state.pop(cid, None)
 
     def _write_config(self, chat_id, overrides=None):
         cfg = {
@@ -353,7 +332,7 @@ class TestCheckAndNotifyNegative:
         chat_id = 81006
         self._write_config(chat_id, {"seat_class": "Business"})
         mock_bot = MagicMock()
-        _notified.pop(chat_id, None)
+        _state.pop(chat_id, None)
 
         data = {
             "isAnyDepartureTripAvailable": True,
@@ -387,7 +366,7 @@ class TestCheckAndNotifyNegative:
         chat_id = 81007
         self._write_config(chat_id, {"seat_class": "I"})
         mock_bot = MagicMock()
-        _notified.pop(chat_id, None)
+        _state.pop(chat_id, None)
 
         data = {
             "isAnyDepartureTripAvailable": True,
@@ -434,7 +413,7 @@ class TestCheckAndNotifyNegative:
         chat_id = 81009
         self._write_config(chat_id)
         mock_bot = MagicMock()
-        _notified.pop(chat_id, None)
+        _state.pop(chat_id, None)
 
         data = {
             "isAnyDepartureTripAvailable": True,
@@ -468,7 +447,7 @@ class TestCheckAndNotifyNegative:
         """TelegramError during notification is caught, not propagated."""
         chat_id = 81010
         self._write_config(chat_id)
-        _notified.pop(chat_id, None)
+        _state.pop(chat_id, None)
 
         data = {
             "isAnyDepartureTripAvailable": True,
@@ -501,7 +480,7 @@ class TestCheckAndNotifyNegative:
         chat_id = 81011
         self._write_config(chat_id)
         mock_bot = MagicMock()
-        _notified.pop(chat_id, None)
+        _state.pop(chat_id, None)
 
         data = {
             "isAnyDepartureTripAvailable": True,
