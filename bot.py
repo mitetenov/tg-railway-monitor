@@ -1,5 +1,5 @@
 """
-Telegram bot for monitoring tkt.ge train tickets.
+Telegram bot for monitoring tre.ge train tickets.
 Commands: /start, /setroute, /setdate, /setclass, /status, /stop
 """
 import asyncio
@@ -119,7 +119,7 @@ async def cmd_start(update: Update, _context) -> None:
     config = load_config(chat_id)
 
     lines = [
-        "👋 *{}*".format("Tre.ge Ticket Monitor" if os.environ.get("TICKET_SOURCE", "tkt.ge") == "tre.ge" else "tkt.ge Ticket Monitor"),
+        "👋 *Tre.ge Ticket Monitor*",
         "",
         "I check train ticket availability on Georgian Railway and notify you.",
         "",

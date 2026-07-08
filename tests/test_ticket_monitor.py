@@ -329,7 +329,7 @@ class TestStatePersistence(unittest.TestCase):
 
 
 class TestLiveAPI(unittest.TestCase):
-    """Live integration test against tkt.ge API.
+    """Live integration test against the API.
     Marked as optional — skip if network is unavailable or expected to fail.
     """
 

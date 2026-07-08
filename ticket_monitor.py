@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-tkt.ge Georgian Railway Ticket Monitor
+Georgian Railway Ticket Monitor
 
 Polling + state diff + Telegram message formatting.
 Zero external dependencies — uses only Python stdlib.

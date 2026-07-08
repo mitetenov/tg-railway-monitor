@@ -82,11 +82,11 @@ class TestApiConstants:
         assert API_KEY.count("-") == 4
 
     def test_api_key_matches_between_modules(self):
-        from api_tkt import API_KEY as TktKey
+        from api_tre import API_KEY as TreKey
         from api import API_KEY as ApiKey
-        assert API_KEY == TktKey == ApiKey
+        assert API_KEY == TreKey == ApiKey
 
     def test_api_base_matches_between_modules(self):
-        from api_tkt import API_BASE as TktBase
+        from api_tre import API_BASE as TreBase
         from api import API_BASE as ApiBase
-        assert API_BASE == TktBase == ApiBase
+        assert API_BASE == TreBase == ApiBase

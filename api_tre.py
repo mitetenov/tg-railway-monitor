@@ -1,13 +1,12 @@
 """
 Tre.ge API implementation for the Georgian Railway ticket system.
 
-Provides TreGeApi, a concrete TicketApi subclass that combines the
-public gateway.tkt.ge REST API (same backend used by tre.ge/tkt.ge)
-with tre.ge-specific features:
+Provides TreGeApi, a concrete TicketApi subclass for searching trips
+and building purchase URLs on tre.ge.
 
   - Station name → URL slug mapping for tre.ge search URLs
   - Purchase URL generation: https://tre.ge/en/search?from={slug}&to={slug}&date={date}
-  - Trip searching via the shared gateway API
+  - Trip searching via the tre.ge API
 
 Endpoint reference: see api-docs.md for the wider picture.
 """
@@ -56,11 +55,10 @@ def build_purchase_url(from_code: str, to_code: str, date_str: str) -> str:
 class TreGeApi(TicketApi):
     """Concrete implementation for the tre.ge Georgian Railway API.
 
-    Combines the shared gateway.tkt.ge REST backend (stations, rides,
+    Combines the shared Georgian Railway REST backend (stations, rides,
     calendar) with tre.ge-specific features like station slug mapping
-    and purchase URL generation.  Trip data comes from the same public
-    endpoints used by both tre.ge and tkt.ge, so ``search_trips()``
-    accepts the same numeric station codes as ``TktGeApi``.
+    and purchase URL generation — search_trips() accepts standard
+    numeric station codes.
 
     Three core REST endpoints are available:
       - Stations dictionary  (GET /Dictionaries/civil-stations)
@@ -180,8 +178,7 @@ class TreGeApi(TicketApi):
     ) -> Optional[dict]:
         """Search for available train rides on a given route and date.
 
-        Uses the same gateway.tkt.ge REST endpoint as TktGeApi (the
-        tre.ge and tkt.ge platforms share a common backend).
+        Uses the shared Georgian Railway REST endpoint.
 
         Args:
             session: Active aiohttp session.

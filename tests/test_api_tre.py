@@ -351,5 +351,4 @@ class TestTreGeApiCrossModule:
         """API_BASE and API_KEY are consistent across modules."""
         from api import API_BASE as ApiBase, API_KEY as ApiKey
         from _api_base import API_BASE as BaseBase, API_KEY as BaseKey
-        from api_tkt import API_BASE as TktBase, API_KEY as TktKey
-        assert API_BASE == ApiBase == BaseBase == TktBase
+        assert API_BASE == ApiBase == BaseBase

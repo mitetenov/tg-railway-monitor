@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-tkt.ge Railway API Explorer
-Queries Georgian Railway availability via the public tkt.ge API.
+Georgian Railway API Explorer
+Queries Georgian Railway availability via the public API.
 """
 import json
 import sys
@@ -122,7 +122,7 @@ def get_popular_routes(day="Tomorrow", direction="FromTbilisi"):
 
 def main():
     print("=" * 60)
-    print("tkt.ge Railway API Explorer")
+    print("Georgian Railway API Explorer")
     print("=" * 60)
     
     # Default: Tbilisi → Batumi, tomorrow

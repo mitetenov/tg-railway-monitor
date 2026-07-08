@@ -4,7 +4,6 @@ Launches an asyncio task per chat that checks available rides every 60 s.
 """
 import asyncio
 import logging
-import os
 from typing import Dict, Optional
 
 import aiohttp
@@ -122,17 +121,12 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         arr = format_time(ride.get("rideEndDate") or "")
         dur = ride.get("rideDuration", "?")
         lines.append(f"🚆 *Ride #{ride_num}*  {dep} → {arr} ({dur})")
-        # Build purchase link for this ride
-        # Use TICKET_SOURCE env variable to pick the right purchase URL
-        source = os.environ.get("TICKET_SOURCE", "tkt.ge")
-        if source == "tre.ge":
-            purchase_url = TreGeApi.build_purchase_url(
-                config.get("from_station_code", ""),
-                config.get("to_station_code", ""),
-                date,
-            )
-        else:
-            purchase_url = "https://tkt.ge/en/railway"
+        # Build purchase link via TreGeApi
+        purchase_url = TreGeApi.build_purchase_url(
+            config.get("from_station_code", ""),
+            config.get("to_station_code", ""),
+            date,
+        )
         lines.append(f"🔗 [Купить]({purchase_url})")
         for cls_name, seats, price in class_list:
             lines.append(f"   {cls_name}: {seats} мест · {price} GEL")

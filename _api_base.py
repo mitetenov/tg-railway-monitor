@@ -2,7 +2,7 @@
 Shared base for Georgian Railway ticket API implementations.
 
 Provides the TicketApi abstract base class and module-level constants
-used by both TktGeApi and TreGeApi.  This module has zero imports from
+used by TreGeApi.  This module has zero imports from
 the API implementation modules, so it is safe to import from anywhere.
 """
 from abc import ABC, abstractmethod

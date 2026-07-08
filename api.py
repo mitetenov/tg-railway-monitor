@@ -1,7 +1,8 @@
 """
-Async API client for Georgian Railway ticket services.
-Provides an abstract base class (TicketApi), concrete implementations
-(TktGeApi, TreGeApi), and a factory function (get_ticket_api()).
+Async API client for Georgian Railway ticket services (tre.ge).
+
+Provides TicketApi abstract base class, TreGeApi implementation, and a
+factory function (get_ticket_api()).
 
 Backward-compatible aliases are maintained at module level so existing
 code (poller.py, bot.py) continues to work unchanged.
@@ -12,17 +13,15 @@ from typing import Any, Optional
 import aiohttp
 
 from _api_base import API_BASE, API_KEY, TicketApi
-from api_tkt import TktGeApi
 from api_tre import TreGeApi
 
 # ── Default API source name ──────────────────────────────────────────
-DEFAULT_TICKET_SOURCE = "tktge"
+DEFAULT_TICKET_SOURCE = "trege"
 
 
 # ═══════════════════════ Factory ══════════════════════════════════════
 
 _SOURCE_REGISTRY: dict[str, type[TicketApi]] = {
-    "tktge": TktGeApi,
     "trege": TreGeApi,
 }
 
@@ -35,7 +34,7 @@ def get_ticket_api(source: Optional[str] = None) -> TicketApi:
 
     If *source* is None, the value is read from the ``TICKET_SOURCE``
     environment variable.  If that is also unset, the default
-    ``"tktge"`` is used.
+    ``"trege"`` is used.
 
     The first call to ``get_ticket_api()`` stores the result as a
     module-level singleton so that subsequent calls (including
@@ -74,23 +73,23 @@ def init_ticket_api(source: Optional[str] = None) -> TicketApi:
 # ═══════════════════════ Backward-Compatible Aliases ══════════════════
 
 # These module-level functions delegate to the cached _api_instance.
-# If _api_instance is None they fall back to a default TktGeApi()
+# If _api_instance is None they fall back to a default TreGeApi()
 # instance so that existing importers (poller.py, bot.py) continue to
 # work without changes.
 
 
 def _resolve_api() -> Any:
-    """Return the cached singleton, or a default TktGeApi()."""
+    """Return the cached singleton, or a default TreGeApi()."""
     if _api_instance is not None:
         return _api_instance
-    # Lazy fallback — create a default TktGeApi but do NOT cache it
+    # Lazy fallback — create a default TreGeApi but do NOT cache it
     # so that a subsequent get_ticket_api() call still becomes the
     # canonical singleton.
-    return TktGeApi()
+    return TreGeApi()
 
 
 async def fetch_json(session: aiohttp.ClientSession, url: str, label: str = "") -> Optional[Any]:
-    """Backward-compatible alias for TktGeApi.fetch_json()."""
+    """Backward-compatible alias for TreGeApi.fetch_json()."""
     api = _resolve_api()
     if hasattr(api, "fetch_json"):
         return await api.fetch_json(session, url, label)
