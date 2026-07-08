@@ -114,6 +114,13 @@ def build_station_keyboard(action: str, page: int = 0, t=None) -> InlineKeyboard
 (FROM_STATION, TO_STATION, WAITING_DATE, WAITING_CLASS) = range(4)
 
 
+# ── Language display names (flag + name) ─────────────────────────────
+LANG_DISPLAY: dict[str, str] = {
+    "en": "\U0001f1ec\U0001f1e7 English",
+    "ru": "\U0001f1f7\U0001f1fa Русский",
+}
+
+
 # ═══════════════════════ COMMAND HANDLERS ════════════════════════════
 
 async def cmd_start(update: Update, _context) -> None:
@@ -526,12 +533,22 @@ async def cmd_lang(update: Update, context) -> None:
     args = context.args
 
     if not args:
-        # Show current language
+        # Show current language with inline keyboard for selection
         t = get_translation(current_lang)
-        lang_display = {"en": "English", "ru": "Русский"}.get(current_lang, current_lang)
+        lang_name = LANG_DISPLAY.get(current_lang, current_lang)
+
+        keyboard = []
+        for code in sorted(SUPPORTED_LANGUAGES):
+            display = LANG_DISPLAY.get(code, code)
+            if code == current_lang:
+                display = f"\u2705 {display}"
+            keyboard.append([InlineKeyboardButton(display, callback_data=f"lang_{code}")])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(
-            t("lang.current", lang=current_lang, lang_name=lang_display),
+            t("lang.current_with_keyboard", lang_name=lang_name),
             parse_mode="Markdown",
+            reply_markup=reply_markup,
         )
         return
 
@@ -556,10 +573,57 @@ async def cmd_lang(update: Update, context) -> None:
     clear_user_lang_cache()
 
     t = get_translation(code)
-    lang_display = {"en": "English", "ru": "Русский"}.get(code, code)
+    lang_display = LANG_DISPLAY.get(code, code)
     await update.message.reply_text(
         t("lang.changed", lang=code, lang_name=lang_display),
         parse_mode="Markdown",
+    )
+
+
+async def cmd_lang_callback(update: Update, _context) -> None:
+    """Handle language selection from inline keyboard.
+
+    Saves the chosen language, then updates the /lang message text and
+    inline keyboard so the newly selected language is highlighted with ✅.
+    """
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data  # e.g. "lang_en", "lang_ru"
+    code = data.split("_", 1)[1]
+    chat_id = update.effective_chat.id
+
+    from config_manager import load_config, save_config  # noqa: PLC0415
+    from i18n import SUPPORTED_LANGUAGES, clear_user_lang_cache, get_translation
+
+    if code not in SUPPORTED_LANGUAGES:
+        return
+
+    # Persist the new language choice
+    config = load_config(chat_id)
+    config["language"] = code
+    save_config(chat_id, config)
+
+    # Bust the in-memory cache so subsequent lookups use the new language
+    clear_user_lang_cache()
+
+    t = get_translation(code)
+    lang_display = LANG_DISPLAY.get(code, code)
+
+    # Rebuild the inline keyboard with the new selection highlighted
+    keyboard = []
+    for lc in sorted(SUPPORTED_LANGUAGES):
+        display = LANG_DISPLAY.get(lc, lc)
+        if lc == code:
+            display = f"\u2705 {display}"
+        keyboard.append([InlineKeyboardButton(display, callback_data=f"lang_{lc}")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.edit_message_text(
+        t("lang.current_with_keyboard", lang_name=lang_display),
+        parse_mode="Markdown",
+        reply_markup=reply_markup,
     )
 
 
@@ -611,6 +675,8 @@ def main() -> None:
 
     # ── Inline callbacks ──
     app.add_handler(CallbackQueryHandler(cmd_status_start_search, pattern="^start_search$"))
+    # ── Language selection callback (from /lang inline keyboard) ──
+    app.add_handler(CallbackQueryHandler(cmd_lang_callback, pattern=r"^lang_(en|ru)$"))
 
     # ── /setroute Conversation ──
     setroute_conv = ConversationHandler(
