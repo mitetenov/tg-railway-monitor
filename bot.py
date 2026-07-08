@@ -539,7 +539,11 @@ async def cmd_lang(update: Update, context) -> None:
 
 
 async def cmd_lang_callback(update: Update, _context) -> None:
-    """Handle language selection from inline keyboard."""
+    """Handle language selection from inline keyboard.
+
+    Saves the chosen language, then updates the /lang message text and
+    inline keyboard so the newly selected language is highlighted with ✅.
+    """
     query = update.callback_query
     await query.answer()
 
@@ -564,9 +568,20 @@ async def cmd_lang_callback(update: Update, _context) -> None:
     t = get_translation(code)
     lang_display = LANG_DISPLAY.get(code, code)
 
+    # Rebuild the inline keyboard with the new selection highlighted
+    keyboard = []
+    for lc in sorted(SUPPORTED_LANGUAGES):
+        display = LANG_DISPLAY.get(lc, lc)
+        if lc == code:
+            display = f"\u2705 {display}"
+        keyboard.append([InlineKeyboardButton(display, callback_data=f"lang_{lc}")])
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
     await query.edit_message_text(
-        t("lang.changed", lang=code, lang_name=lang_display),
+        t("lang.current_with_keyboard", lang_name=lang_display),
         parse_mode="Markdown",
+        reply_markup=reply_markup,
     )
 
 

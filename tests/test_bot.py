@@ -743,3 +743,94 @@ class TestLangCommand:
             await bot.cmd_lang(update, ctx)
         saved = mock_save.call_args[0][1]
         assert saved["language"] == "ru"
+
+
+# ═══════════════════════ /lang Inline Keyboard Callback ════════════════
+
+
+class TestLangCallback:
+
+    @pytest.mark.asyncio
+    async def test_switch_to_russian(self):
+        """Pressing lang_ru switches language and updates keyboard."""
+        import bot
+        update = make_update(chat_id=12345, callback_data="lang_ru")
+        ctx = make_context()
+
+        with patch("config_manager.load_config", return_value={}), \
+             patch("config_manager.save_config") as mock_save, \
+             patch("i18n.clear_user_lang_cache"):
+            await bot.cmd_lang_callback(update, ctx)
+
+        # Config saved with new language
+        saved = mock_save.call_args[0][1]
+        assert saved["language"] == "ru"
+
+        # Message edited with updated text + keyboard
+        query = update.callback_query
+        query.edit_message_text.assert_called_once()
+        call_kwargs = query.edit_message_text.call_args[1]
+        text = call_kwargs.get("args", ())[0] if call_kwargs.get("args") else query.edit_message_text.call_args[0][0]
+        assert "Русский" in text or "Russian" in text
+        # reply_markup should be present
+        assert "reply_markup" in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_switch_to_english_from_russian(self):
+        """Pressing lang_en when current is RU switches and updates keyboard."""
+        import bot
+        update = make_update(chat_id=12345, callback_data="lang_en")
+        ctx = make_context()
+
+        with patch("config_manager.load_config", return_value={"language": "ru"}), \
+             patch("config_manager.save_config") as mock_save, \
+             patch("i18n.clear_user_lang_cache"):
+            await bot.cmd_lang_callback(update, ctx)
+
+        saved = mock_save.call_args[0][1]
+        assert saved["language"] == "en"
+
+        query = update.callback_query
+        query.edit_message_text.assert_called_once()
+        call_kwargs = query.edit_message_text.call_args[1]
+        text = call_kwargs.get("args", ())[0] if call_kwargs.get("args") else query.edit_message_text.call_args[0][0]
+        assert "English" in text or "Английский" in text
+        # Verify reply_markup is present (keyboard with ✅ on EN)
+        assert "reply_markup" in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_same_language_selected(self):
+        """Pressing the already-active language is a no-op for persistence but still redraws."""
+        import bot
+        update = make_update(chat_id=12345, callback_data="lang_en")
+        ctx = make_context()
+
+        with patch("config_manager.load_config", return_value={"language": "en"}), \
+             patch("config_manager.save_config") as mock_save, \
+             patch("i18n.clear_user_lang_cache"):
+            await bot.cmd_lang_callback(update, ctx)
+
+        # Language is still saved (it's the same, but we always persist)
+        mock_save.assert_called_once()
+        saved = mock_save.call_args[0][1]
+        assert saved["language"] == "en"
+
+        # Keyboard is redrawn
+        query = update.callback_query
+        call_kwargs = query.edit_message_text.call_args[1]
+        assert "reply_markup" in call_kwargs
+
+    @pytest.mark.asyncio
+    async def test_invalid_language_code_ignored(self):
+        """Unknown language codes are silently ignored."""
+        import bot
+        update = make_update(chat_id=12345, callback_data="lang_de")
+        ctx = make_context()
+
+        with patch("config_manager.load_config") as mock_load, \
+             patch("config_manager.save_config") as mock_save, \
+             patch("i18n.clear_user_lang_cache"):
+            await bot.cmd_lang_callback(update, ctx)
+
+        mock_save.assert_not_called()
+        update.callback_query.edit_message_text.assert_not_called()
