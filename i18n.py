@@ -193,3 +193,86 @@ def get_translation(lang: str = "en") -> Translation:
 def clear_cache() -> None:
     """Purge cached translations (useful in tests)."""
     _cache.clear()
+
+
+# ═══════════════════ User language detection & storage ════════════════
+
+SUPPORTED_LANGUAGES = frozenset({"en", "ru"})
+
+# In-memory cache: chat_id -> language code (backed by persistent config)
+_user_lang_cache: dict[int, str] = {}
+
+
+def _normalize_lang(lang_code: Optional[str]) -> str:
+    """Normalise an IETF language tag to a supported language code.
+
+    Handles regional variants (``"en-US"`` → ``"en"``) and missing or
+    ``None`` input (→ ``"en"``). Returns ``"en"`` for unsupported languages.
+    """
+    if not lang_code:
+        return "en"
+    lang = lang_code.split("-")[0].lower()
+    return lang if lang in SUPPORTED_LANGUAGES else "en"
+
+
+def detect_and_store_language(chat_id: int, user=None) -> str:
+    """Detect a user's language, persist it, and cache it in memory.
+
+    When a language is already stored in the chat's config file, it is
+    returned immediately.  Otherwise the language is inferred from
+    *user*.\ ``language_code`` (the Telegram User object), normalised,
+    saved to the persistent config dict, and cached in-memory.
+
+    Parameters
+    ----------
+    chat_id : int
+        Telegram chat ID (used as the persistence key).
+    user : object or None
+        A Telegram ``User`` instance with a ``language_code`` attribute,
+        or ``None`` to skip detection and default to ``"en"``.
+
+    Returns
+    -------
+    str
+        A supported language code (``"en"`` or ``"ru"``).
+    """
+    from config_manager import load_config, save_config  # noqa: PLC0415
+
+    config = load_config(chat_id)
+    stored = config.get("language")
+    if stored and stored in SUPPORTED_LANGUAGES:
+        _user_lang_cache[chat_id] = stored
+        return stored
+
+    lang = "en"
+    if user is not None and hasattr(user, "language_code"):
+        lang = _normalize_lang(user.language_code)
+
+    config["language"] = lang
+    save_config(chat_id, config)
+    _user_lang_cache[chat_id] = lang
+    return lang
+
+
+def get_user_language(chat_id: int, user=None) -> str:
+    """Return the stored or detected language for *chat_id*.
+
+    The in-memory cache is checked first; on a cache miss the persistent
+    config is consulted (and refreshed into the cache).  If no stored
+    language exists, detection falls through to *user*.
+    """
+    cached = _user_lang_cache.get(chat_id)
+    if cached is not None:
+        return cached
+    return detect_and_store_language(chat_id, user)
+
+
+def get_user_translation(chat_id: int, user=None) -> Translation:
+    """Return a ``Translation`` instance for the user's language."""
+    lang = get_user_language(chat_id, user)
+    return get_translation(lang)
+
+
+def clear_user_lang_cache() -> None:
+    """Purge the in-memory user-language cache (useful in tests)."""
+    _user_lang_cache.clear()
