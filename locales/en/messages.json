@@ -1,0 +1,93 @@
+{
+  "start": {
+    "welcome": "👋 *Tre.ge Ticket Monitor*",
+    "description": "I check train ticket availability on Georgian Railway and notify you.",
+    "no_config": "Use the commands below to set up monitoring:",
+    "cmd_setroute": "/setroute — pick departure & arrival stations",
+    "cmd_setdate": "/setdate — set travel date",
+    "cmd_setclass": "/setclass — pick seat class",
+    "cmd_status": "/status — show current config & polling",
+    "cmd_stop": "/stop — stop monitoring",
+    "cmd_resume": "/resume — resume monitoring (if route is configured)",
+    "current_config": "*Current config:*",
+    "route_line": "🚉 {from_name} → {to_name}",
+    "date_line": "📅 {date}",
+    "class_line": "💺 Class: {class_name}",
+    "monitoring_active": "✅ *Monitoring active* — checking every 60 s",
+    "monitoring_paused": "⏸ *Monitoring paused*",
+    "no_config_yet": "No configuration yet.",
+    "start_with_setroute": "Start with /setroute"
+  },
+
+  "status": {
+    "title": "*📊 Status*",
+    "route": "*Route:* {from_name} → {to_name}",
+    "date": "*Date:* {date}",
+    "class": "*Class:* {class_name}",
+    "monitoring_active": "✅ *Monitoring active* — checking every 60 s",
+    "config_complete_not_started": "⏸ *Config complete but polling not started*",
+    "config_incomplete": "⚠️ *Config incomplete* — use /setroute, /setdate, /setclass",
+    "no_config": "No configuration yet.",
+    "start_with_setroute": "Start with /setroute",
+    "active_monitors": "👥 Active monitors: {count}"
+  },
+
+  "stop": {
+    "stopped": "🛑 Monitoring stopped. Your configuration is preserved.\nUse /setroute to restart."
+  },
+
+  "route": {
+    "select_from": "🚉 *Select departure station:*",
+    "cancelled": "🚫 Cancelled.",
+    "station_not_found": "❌ Station not found. Try again.",
+    "from_selected": "🚉 *From:* {station_name}\n\nNow select *arrival station:*",
+    "same_station": "⚠️ Departure and arrival must be different. Try again.",
+    "saved": "✅ *Route saved:* {from_name} → {to_name}\n\nNext steps:\n  /setdate — set travel date\n  /setclass — choose seat class"
+  },
+
+  "date": {
+    "prompt": "📅 *Enter travel date*\n\nFormat: `YYYY-MM-DD`\nExamples: `2026-07-15`, `today`, `tomorrow`, `+3` (days from now)",
+    "invalid_format": "❌ Invalid format. Use `+3` or `YYYY-MM-DD`.",
+    "past_date": "❌ Date is in the past. Try again.",
+    "invalid_date": "❌ Invalid date. Use format `YYYY-MM-DD`.",
+    "unrecognised": "❌ I don't understand. Use `YYYY-MM-DD`, `today`, or `tomorrow`.",
+    "set": "✅ Date set to *{date}*",
+    "monitoring_started": "✅ Monitoring started — checking every 60 s!",
+    "incomplete_hint": "Make sure to also set:\n  /setroute — route\n  /setclass — seat class"
+  },
+
+  "class": {
+    "select": "💺 *Select seat class:*",
+    "cancelled": "🚫 Cancelled.",
+    "set": "✅ Seat class set to *{class_name}*",
+    "monitoring_started": "✅ Monitoring started — checking every 60 s!",
+    "incomplete_hint": "Make sure to also set:\n  /setroute — route\n  /setdate — travel date"
+  },
+
+  "fallback": {
+    "unrecognised": "I don't understand that command.\nTry /start to see available commands."
+  },
+
+  "poller": {
+    "route_header": "🎫 *{from_name}* → *{to_name}*",
+    "date": "📅 {date}",
+    "ride": "🚆 *Ride #{ride_num}*  {departure} → {arrival} ({duration})",
+    "purchase_link": "🔗 [Purchase]({url})",
+    "class_info": "{class_name}: {seats} seats · {price} GEL",
+    "class_info_ru": "{class_name}: {seats} мест · {price} GEL",
+    "not_configured": "❌ Route not configured. Use /setroute first.",
+    "resumed": "✅ Monitoring resumed!",
+    "already_active": "✅ Monitoring is already active."
+  },
+
+  "button": {
+    "prev": "◀️ Prev",
+    "next": "Next ▶️",
+    "cancel": "🚫 Cancel"
+  },
+
+  "n_seats": {
+    "one": "{count} seat",
+    "other": "{count} seats"
+  }
+}

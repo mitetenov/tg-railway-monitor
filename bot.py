@@ -465,8 +465,15 @@ async def fallback_handler(update: Update, _context) -> None:
 # ═══════════════════ Main ════════════════════════════════════════════
 
 async def post_init(application: Application) -> None:
-    """Run after Application initialisation — load station cache and register bot commands."""
+    """Run after Application initialisation — load station cache, init i18n, and register bot commands."""
     await load_stations()
+
+    # Pre-cache both EN and RU translations
+    from i18n import get_translation
+    t_en = get_translation("en")
+    t_ru = get_translation("ru")
+    logger.info("i18n loaded: en (%d keys), ru (%d keys)", t_en.key_count, t_ru.key_count)
+
     await application.bot.set_my_commands(
         [
             BotCommand("start", "Start the bot and show help"),
