@@ -24,9 +24,8 @@ from telegram.ext import (
 import poller
 from api import get_stations
 from config_manager import load_config, save_config, is_config_complete
+from i18n import get_user_translation
 from stations import FALLBACK_STATIONS, STATION_SLUGS
-
-# ── logging ──────────────────────────────────────────────────────────
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     level=logging.INFO,
@@ -73,18 +72,20 @@ def station_button(station: dict, action: str) -> InlineKeyboardButton:
     return InlineKeyboardButton(name, callback_data=f"{action}:{code}")
 
 
-def pagination_buttons(page: int, total_pages: int, action: str) -> list[InlineKeyboardButton]:
+def pagination_buttons(page: int, total_pages: int, action: str, t=None) -> list[InlineKeyboardButton]:
     """Create Prev / Next / Page buttons for pagination."""
     buttons = []
     if page > 0:
-        buttons.append(InlineKeyboardButton("◀️ Prev", callback_data=f"page:{action}:{page - 1}"))
+        prev_label = t("button.prev") if t else "◀️ Prev"
+        buttons.append(InlineKeyboardButton(prev_label, callback_data=f"page:{action}:{page - 1}"))
     buttons.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="noop"))
     if page < total_pages - 1:
-        buttons.append(InlineKeyboardButton("Next ▶️", callback_data=f"page:{action}:{page + 1}"))
+        next_label = t("button.next") if t else "Next ▶️"
+        buttons.append(InlineKeyboardButton(next_label, callback_data=f"page:{action}:{page + 1}"))
     return buttons
 
 
-def build_station_keyboard(action: str, page: int = 0) -> InlineKeyboardMarkup:
+def build_station_keyboard(action: str, page: int = 0, t=None) -> InlineKeyboardMarkup:
     """Build a paginated inline keyboard for station selection.
 
     action: "from" or "to"  — embedded in callback_data for state tracking.
@@ -94,16 +95,18 @@ def build_station_keyboard(action: str, page: int = 0) -> InlineKeyboardMarkup:
     start = page * STATIONS_PER_PAGE
     end = min(start + STATIONS_PER_PAGE, total)
 
+    cancel_label = t("button.cancel") if t else "🚫 Cancel"
+
     keyboard = []
     for s in _stations[start:end]:
         name = s.get("stationName", "?")
         code = str(s.get("code", ""))
         keyboard.append([InlineKeyboardButton(name, callback_data=f"{action}:{code}")])
 
-    nav = pagination_buttons(page, total_pages, action)
+    nav = pagination_buttons(page, total_pages, action, t)
     if nav:
         keyboard.append(nav)
-    keyboard.append([InlineKeyboardButton("🚫 Cancel", callback_data="cancel")])
+    keyboard.append([InlineKeyboardButton(cancel_label, callback_data="cancel")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -117,34 +120,36 @@ async def cmd_start(update: Update, _context) -> None:
     """Welcome message with current config summary."""
     chat_id = update.effective_chat.id
     config = load_config(chat_id)
+    t = get_user_translation(chat_id, update.effective_user)
 
     lines = [
-        "👋 *Tre.ge Ticket Monitor*",
+        t("start.welcome"),
         "",
-        "I check train ticket availability on Georgian Railway and notify you.",
+        t("start.description"),
         "",
     ]
 
     if config:
-        lines.append("*Current config:*")
-        lines.append(f"🚉 {config.get('from_station', '?')} → {config.get('to_station', '?')}")
-        lines.append(f"📅 {config.get('date', '?')}")
-        lines.append(f"💺 Class: {config.get('seat_class', 'Any')}")
+        lines.append(t("start.current_config"))
+        lines.append(t("start.route_line", from_name=config.get("from_station", "?"),
+                       to_name=config.get("to_station", "?")))
+        lines.append(t("start.date_line", date=config.get("date", "?")))
+        lines.append(t("start.class_line", class_name=config.get("seat_class", "Any")))
         if poller.is_running(chat_id):
-            lines.append("\n✅ *Monitoring active* — checking every 60 s")
+            lines.append(f"\n{t('start.monitoring_active')}")
         else:
-            lines.append("\n⏸ *Monitoring paused*")
+            lines.append(f"\n{t('start.monitoring_paused')}")
     else:
-        lines.append("Use the commands below to set up monitoring:")
+        lines.append(t("start.no_config"))
         lines.append("")
 
     lines.append("")
-    lines.append("/setroute — pick departure & arrival stations")
-    lines.append("/setdate — set travel date")
-    lines.append("/setclass — pick seat class")
-    lines.append("/status — show current config & polling")
-    lines.append("/stop — stop monitoring")
-    lines.append("/resume — resume monitoring (if route is configured)")
+    lines.append(t("start.cmd_setroute"))
+    lines.append(t("start.cmd_setdate"))
+    lines.append(t("start.cmd_setclass"))
+    lines.append(t("start.cmd_status"))
+    lines.append(t("start.cmd_stop"))
+    lines.append(t("start.cmd_resume"))
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -153,28 +158,30 @@ async def cmd_status(update: Update, _context) -> None:
     """Show current config and monitoring state."""
     chat_id = update.effective_chat.id
     config = load_config(chat_id)
+    t = get_user_translation(chat_id, update.effective_user)
 
-    lines = ["*📊 Status*", ""]
+    lines = [t("status.title"), ""]
 
     if config:
-        lines.append(f"*Route:* {config.get('from_station', '?')} → {config.get('to_station', '?')}")
-        lines.append(f"*Date:* {config.get('date', '?')}")
-        lines.append(f"*Class:* {config.get('seat_class', 'Any')}")
+        lines.append(t("status.route", from_name=config.get("from_station", "?"),
+                       to_name=config.get("to_station", "?")))
+        lines.append(t("status.date", date=config.get("date", "?")))
+        lines.append(t("status.class", class_name=config.get("seat_class", "Any")))
         lines.append("")
 
         if poller.is_running(chat_id):
-            lines.append("✅ *Monitoring active* — checking every 60 s")
+            lines.append(t("status.monitoring_active"))
         elif is_config_complete(config):
-            lines.append("⏸ *Config complete but polling not started*")
+            lines.append(t("status.config_complete_not_started"))
             lines.append("   Start with /setdate or re-send /setroute")
         else:
-            lines.append("⚠️ *Config incomplete* — use /setroute, /setdate, /setclass")
+            lines.append(t("status.config_incomplete"))
     else:
-        lines.append("No configuration yet.")
-        lines.append("Start with /setroute")
+        lines.append(t("status.no_config"))
+        lines.append(t("status.start_with_setroute"))
 
     lines.append("")
-    lines.append(f"👥 Active monitors: {poller.active_count()}")
+    lines.append(t("status.active_monitors", count=poller.active_count()))
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -183,10 +190,8 @@ async def cmd_stop(update: Update, _context) -> None:
     """Stop monitoring for this chat."""
     chat_id = update.effective_chat.id
     poller.stop(chat_id)
-    await update.message.reply_text(
-        "🛑 Monitoring stopped. Your configuration is preserved.\n"
-        "Use /setroute to restart."
-    )
+    t = get_user_translation(chat_id, update.effective_user)
+    await update.message.reply_text(t("stop.stopped"))
 
 
 async def cmd_resume(update: Update, _context) -> None:
@@ -211,8 +216,10 @@ async def setroute_entry(update: Update, context) -> int:
     if not _stations:
         await load_stations()
 
-    text = "🚉 *Select departure station:*"
-    reply_markup = build_station_keyboard("from", 0)
+    chat_id = update.effective_chat.id
+    t = get_user_translation(chat_id, update.effective_user)
+    text = t("route.select_from")
+    reply_markup = build_station_keyboard("from", 0, t)
 
     if query:
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=reply_markup)
@@ -228,13 +235,17 @@ async def from_station_handler(update: Update, context) -> Optional[int]:
 
     data = query.data
     if data == "cancel":
-        await query.edit_message_text("🚫 Cancelled.")
+        chat_id = update.effective_chat.id
+        t = get_user_translation(chat_id, update.effective_user)
+        await query.edit_message_text(t("route.cancelled"))
         return ConversationHandler.END
 
     if data.startswith("page:from:"):
+        chat_id = update.effective_chat.id
+        t = get_user_translation(chat_id, update.effective_user)
         page = int(data.split(":")[2])
         await query.edit_message_reply_markup(
-            reply_markup=build_station_keyboard("from", page)
+            reply_markup=build_station_keyboard("from", page, t)
         )
         return FROM_STATION
 
@@ -242,15 +253,19 @@ async def from_station_handler(update: Update, context) -> Optional[int]:
         code = data.split(":", 1)[1]
         station = _station_index.get(code)
         if not station:
-            await query.edit_message_text("❌ Station not found. Try again.")
+            chat_id = update.effective_chat.id
+            t = get_user_translation(chat_id, update.effective_user)
+            await query.edit_message_text(t("route.station_not_found"))
             return ConversationHandler.END
         context.user_data["from_code"] = code
         context.user_data["from_station"] = station.get("stationName", "?")
 
         # Show 'to' station keyboard
-        text = f"🚉 *From:* {station.get('stationName')}\n\nNow select *arrival station:*"
+        chat_id = update.effective_chat.id
+        t = get_user_translation(chat_id, update.effective_user)
+        text = t("route.from_selected", station_name=station.get("stationName"))
         await query.edit_message_text(text, parse_mode="Markdown",
-                                      reply_markup=build_station_keyboard("to", 0))
+                                      reply_markup=build_station_keyboard("to", 0, t))
         return TO_STATION
 
     return FROM_STATION
@@ -263,13 +278,17 @@ async def to_station_handler(update: Update, context) -> Optional[int]:
 
     data = query.data
     if data == "cancel":
-        await query.edit_message_text("🚫 Cancelled.")
+        chat_id = update.effective_chat.id
+        t = get_user_translation(chat_id, update.effective_user)
+        await query.edit_message_text(t("route.cancelled"))
         return ConversationHandler.END
 
     if data.startswith("page:to:"):
+        chat_id = update.effective_chat.id
+        t = get_user_translation(chat_id, update.effective_user)
         page = int(data.split(":")[2])
         await query.edit_message_reply_markup(
-            reply_markup=build_station_keyboard("to", page)
+            reply_markup=build_station_keyboard("to", page, t)
         )
         return TO_STATION
 
@@ -284,9 +303,11 @@ async def to_station_handler(update: Update, context) -> Optional[int]:
         from_code = context.user_data.get("from_code", "")
 
         if from_code == code:
+            chat_id = update.effective_chat.id
+            t = get_user_translation(chat_id, update.effective_user)
             await query.edit_message_text(
-                "⚠️ Departure and arrival must be different. Try again.",
-                reply_markup=build_station_keyboard("to", 0),
+                t("route.same_station"),
+                reply_markup=build_station_keyboard("to", 0, t),
             )
             return TO_STATION
 
@@ -304,12 +325,8 @@ async def to_station_handler(update: Update, context) -> Optional[int]:
 
         context.user_data.clear()
 
-        msg = (
-            f"✅ *Route saved:* {from_name} → {to_name}\n\n"
-            "Next steps:\n"
-            "  /setdate — set travel date\n"
-            "  /setclass — choose seat class"
-        )
+        t = get_user_translation(chat_id, update.effective_user)
+        msg = t("route.saved", from_name=from_name, to_name=to_name)
         await query.edit_message_text(msg, parse_mode="Markdown")
         return ConversationHandler.END
 
@@ -323,10 +340,10 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 async def setdate_entry(update: Update, _context) -> int:
     """Ask user for a date."""
+    chat_id = update.effective_chat.id
+    t = get_user_translation(chat_id, update.effective_user)
     await update.message.reply_text(
-        "📅 *Enter travel date*\n\n"
-        "Format: `YYYY-MM-DD`\n"
-        "Examples: `2026-07-15`, `today`, `tomorrow`, `+3` (days from now)",
+        t("date.prompt"),
         parse_mode="Markdown",
     )
     return WAITING_DATE
@@ -335,6 +352,8 @@ async def setdate_entry(update: Update, _context) -> int:
 async def setdate_handler(update: Update, context) -> Optional[int]:
     """Parse and save the date."""
     text = update.message.text.strip()
+    chat_id = update.effective_chat.id
+    t = get_user_translation(chat_id, update.effective_user)
 
     # Parse relative dates
     now = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -347,42 +366,34 @@ async def setdate_handler(update: Update, context) -> Optional[int]:
             days = int(text[1:])
             date = now + timedelta(days=days)
         except ValueError:
-            await update.message.reply_text("❌ Invalid format. Use `+3` or `YYYY-MM-DD`.", parse_mode="Markdown")
+            await update.message.reply_text(t("date.invalid_format"), parse_mode="Markdown")
             return WAITING_DATE
     elif DATE_RE.match(text):
         try:
             date = datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=timezone.utc)
             if date < now:
-                await update.message.reply_text("❌ Date is in the past. Try again.")
+                await update.message.reply_text(t("date.past_date"))
                 return WAITING_DATE
         except ValueError:
-            await update.message.reply_text("❌ Invalid date. Use format `YYYY-MM-DD`.", parse_mode="Markdown")
+            await update.message.reply_text(t("date.invalid_date"), parse_mode="Markdown")
             return WAITING_DATE
     else:
-        await update.message.reply_text(
-            "❌ I don't understand. Use `YYYY-MM-DD`, `today`, or `tomorrow`.",
-            parse_mode="Markdown",
-        )
+        await update.message.reply_text(t("date.unrecognised"), parse_mode="Markdown")
         return WAITING_DATE
 
     date_str = date.strftime("%Y-%m-%d")
-    chat_id = update.effective_chat.id
     config = load_config(chat_id)
     config["date"] = date_str
     save_config(chat_id, config)
 
-    await update.message.reply_text(f"✅ Date set to *{date_str}*", parse_mode="Markdown")
+    await update.message.reply_text(t("date.set", date=date_str), parse_mode="Markdown")
 
     # If config is now complete, start polling automatically
     if is_config_complete(config):
         poller.start(context.bot, chat_id)
-        await update.message.reply_text("✅ Monitoring started — checking every 60 s!")
+        await update.message.reply_text(t("date.monitoring_started"))
     else:
-        await update.message.reply_text(
-            "Make sure to also set:\n"
-            "  /setroute — route\n"
-            "  /setclass — seat class\n"
-        )
+        await update.message.reply_text(t("date.incomplete_hint"))
 
     return ConversationHandler.END
 
@@ -394,13 +405,15 @@ CLASS_OPTIONS = [("Any class", "Any"), ("Business", "Business"), ("Class I", "I"
 
 async def setclass_entry(update: Update, _context) -> int:
     """Show class selection keyboard."""
+    chat_id = update.effective_chat.id
+    t = get_user_translation(chat_id, update.effective_user)
     keyboard = [
         [InlineKeyboardButton(name, callback_data=f"class:{val}") for name, val in CLASS_OPTIONS[:2]],
         [InlineKeyboardButton(name, callback_data=f"class:{val}") for name, val in CLASS_OPTIONS[2:]],
-        [InlineKeyboardButton("🚫 Cancel", callback_data="cancel")],
+        [InlineKeyboardButton(t("button.cancel"), callback_data="cancel")],
     ]
     await update.message.reply_text(
-        "💺 *Select seat class:*",
+        t("class.select"),
         parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
@@ -414,7 +427,9 @@ async def setclass_handler(update: Update, context) -> Optional[int]:
 
     data = query.data
     if data == "cancel":
-        await query.edit_message_text("🚫 Cancelled.")
+        chat_id = update.effective_chat.id
+        t = get_user_translation(chat_id, update.effective_user)
+        await query.edit_message_text(t("class.cancelled"))
         return ConversationHandler.END
 
     if data.startswith("class:"):
@@ -424,18 +439,15 @@ async def setclass_handler(update: Update, context) -> Optional[int]:
         config["seat_class"] = cls
         save_config(chat_id, config)
 
-        await query.edit_message_text(f"✅ Seat class set to *{cls}*", parse_mode="Markdown")
+        t = get_user_translation(chat_id, update.effective_user)
+        await query.edit_message_text(t("class.set", class_name=cls), parse_mode="Markdown")
 
         # If config is now complete, start polling
         if is_config_complete(config):
             poller.start(context.bot, chat_id)
-            await query.message.reply_text("✅ Monitoring started — checking every 60 s!")
+            await query.message.reply_text(t("class.monitoring_started"))
         else:
-            await query.message.reply_text(
-                "Make sure to also set:\n"
-                "  /setroute — route\n"
-                "  /setdate — travel date\n"
-            )
+            await query.message.reply_text(t("class.incomplete_hint"))
         return ConversationHandler.END
 
     return WAITING_CLASS
@@ -446,9 +458,13 @@ async def cancel_handler(update: Update, _context) -> int:
     query = update.callback_query
     if query:
         await query.answer()
-        await query.edit_message_text("🚫 Cancelled.")
+        chat_id = update.effective_chat.id
+        t = get_user_translation(chat_id, update.effective_user)
+        await query.edit_message_text(t("route.cancelled"))
     else:
-        await update.message.reply_text("🚫 Cancelled.")
+        chat_id = update.effective_chat.id
+        t = get_user_translation(chat_id, update.effective_user)
+        await update.message.reply_text(t("route.cancelled"))
     return ConversationHandler.END
 
 
@@ -456,10 +472,9 @@ async def cancel_handler(update: Update, _context) -> int:
 
 async def fallback_handler(update: Update, _context) -> None:
     """Handle unrecognised commands / text."""
-    await update.message.reply_text(
-        "I don't understand that command.\n"
-        "Try /start to see available commands."
-    )
+    chat_id = update.effective_chat.id
+    t = get_user_translation(chat_id, update.effective_user)
+    await update.message.reply_text(t("fallback.unrecognised"))
 
 
 # ═══════════════════ Main ════════════════════════════════════════════
