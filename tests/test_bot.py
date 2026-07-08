@@ -850,3 +850,86 @@ class TestLangCommand:
             await bot.cmd_lang(update, ctx)
         saved = mock_save.call_args[0][1]
         assert saved["language"] == "ru"
+
+
+# ═══════════════════════ Start Search Button on /status ═════════════════
+
+
+class TestStatusStartSearchButton:
+
+    @pytest.mark.asyncio
+    async def test_status_shows_start_button_when_config_complete(self):
+        """Start search button appears when config complete and monitoring stopped."""
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+
+        config = {
+            "from_station": "Tbilisi",
+            "to_station": "Batumi",
+            "date": "2026-07-15",
+            "seat_class": "Any",
+        }
+        with patch("bot.load_config", return_value=config), \
+             patch("bot.poller.is_running", return_value=False), \
+             patch("bot.is_config_complete", return_value=True):
+            await bot.cmd_status(update, ctx)
+            call_kwargs = update.message.reply_text.call_args[1]
+            assert "start_search" in str(call_kwargs.get("reply_markup"))
+            positional_args = update.message.reply_text.call_args[0]
+            text = positional_args[0] if positional_args else ""
+            assert "Config complete but polling not started" in text
+
+    @pytest.mark.asyncio
+    async def test_status_no_button_when_monitoring_running(self):
+        """No start search button when monitoring is already active."""
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+
+        config = {
+            "from_station": "Tbilisi",
+            "to_station": "Batumi",
+            "date": "2026-07-15",
+            "seat_class": "Any",
+        }
+        with patch("bot.load_config", return_value=config), \
+             patch("bot.poller.is_running", return_value=True), \
+             patch("bot.is_config_complete", return_value=True):
+            await bot.cmd_status(update, ctx)
+            reply_markup = update.message.reply_text.call_args[1].get("reply_markup")
+            assert reply_markup is None
+
+    @pytest.mark.asyncio
+    async def test_status_no_button_when_config_incomplete(self):
+        """No start search button when config is incomplete."""
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+
+        config = {
+            "from_station": "Tbilisi",
+            "date": "2026-07-15",
+        }
+        with patch("bot.load_config", return_value=config), \
+             patch("bot.poller.is_running", return_value=False), \
+             patch("bot.is_config_complete", return_value=False):
+            await bot.cmd_status(update, ctx)
+            reply_markup = update.message.reply_text.call_args[1].get("reply_markup")
+            assert reply_markup is None
+
+    @pytest.mark.asyncio
+    async def test_status_start_search_callback(self):
+        """Clicking start_search calls poller.resume and edits the message."""
+        import bot
+        update = make_update(callback_data="start_search", chat_id=12345)
+        ctx = make_context()
+
+        with patch("bot.poller.resume", return_value=(True, "✅ Monitoring resumed!")):
+            await bot.cmd_status_start_search(update, ctx)
+            update.callback_query.answer.assert_called_once()
+            bot.poller.resume.assert_called_once_with(ctx.bot, 12345)
+            update.callback_query.edit_message_text.assert_called_once_with(
+                "✅ Monitoring resumed!",
+                parse_mode="Markdown",
+            )
