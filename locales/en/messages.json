@@ -95,6 +95,7 @@
 
   "lang": {
     "current": "🌐 *Language:* English (`en`)",
+    "current_with_keyboard": "🌐 *Current language:* {lang_name}\n\nSelect language:",
     "changed": "✅ Language changed to English (`en`)",
     "invalid": "❌ Invalid language code `{code}`.\\nAvailable: en (English), ru (Русский)",
     "cmd_hint": "/lang [en|ru] — show or change language"
