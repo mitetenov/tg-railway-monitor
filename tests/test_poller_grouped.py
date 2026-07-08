@@ -71,7 +71,7 @@ def test_stateful_diff_seats_increased():
 
 
 def _make_ride(ride_num, classes):
-    """Construct a ride dict matching the tkt.ge API response shape."""
+    """Construct a ride dict matching the API response shape."""
     return {
         "id": ride_num,
         "rideNumber": ride_num,
@@ -233,13 +233,9 @@ def test_grouped_message_format():
         "",
     ]
     lines.append(f"🚆 *Ride #{ride_num}*  {dep} → {arr} ({dur})")
-    # Build purchase link (mirroring poller logic)
-    purchase_url = (
-        f"https://tkt.ge/en/railway"
-        f"?startStationCode={from_code}"
-        f"&endStationCode={to_code}"
-        f"&departureDate=2026-06-27"
-    )
+    # Build purchase link (mirroring poller logic — tre.ge only)
+    from api_tre import TreGeApi
+    purchase_url = TreGeApi.build_purchase_url(from_code, to_code, "2026-06-27")
     lines.append(f"🔗 [Купить]({purchase_url})")
     for cls_name, seats, price in class_list:
         lines.append(f"   {cls_name}: {seats} мест · {price} GEL")
@@ -254,13 +250,13 @@ def test_grouped_message_format():
     # Ride line
     assert "🚆 *Ride #812*  00:30 → 05:42 (05:12:00)" in message
 
-    # Purchase link — verify it points to search URL with correct params
+    # Purchase link — verify it uses tre.ge search URL
     assert "🔗 [" in message
     assert "Купить]" in message
-    assert "https://tkt.ge/en/railway" in message
-    assert "?startStationCode=56014" in message
-    assert "&endStationCode=57151" in message
-    assert "&departureDate=2026-06-27" in message
+    assert "tre.ge/en/search" in message
+    assert "leavingPlace=56014" in message
+    assert "enteringPlace=57151" in message
+    assert "leaveDate=27.06.2026" in message
 
     # Class lines — all three present with English names
     assert "II Class: 89 мест · 36 GEL" in message
