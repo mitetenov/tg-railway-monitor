@@ -20,10 +20,12 @@ import config_manager as cm
 class TestConfigManagerNegative:
     def setup_method(self):
         self._tmp = tempfile.mkdtemp(prefix="tg_test_neg_")
+        self._saved_data_dir = cm.DATA_DIR
         cm.DATA_DIR = self._tmp
 
     def teardown_method(self):
         import shutil
+        cm.DATA_DIR = self._saved_data_dir
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     # ── Corrupted JSON ──────────────────────────────────────────────────

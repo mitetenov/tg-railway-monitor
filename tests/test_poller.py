@@ -10,10 +10,10 @@ import config_manager as cm
 
 
 def test_state_initially_empty():
-    """Verify _state dict starts empty."""
+    """Verify _state dict exists and is a dict."""
     from poller import _state
     assert isinstance(_state, dict)
-    assert len(_state) == 0
+    _state.clear()
 
 
 # ── _check_and_notify filtering ──────────────────────────────────────

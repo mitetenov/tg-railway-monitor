@@ -12,6 +12,8 @@ from config_manager import DATA_DIR, is_config_complete
 
 def setup_module():
     """Use a temp dir for test configs."""
+    global _saved_data_dir
+    _saved_data_dir = cm.DATA_DIR
     cm.DATA_DIR = tempfile.mkdtemp(prefix="tg_test_")
     cm._ensure_data_dir()
 
@@ -20,6 +22,7 @@ def teardown_module():
     """Clean up temp files."""
     import shutil
     shutil.rmtree(cm.DATA_DIR, ignore_errors=True)
+    cm.DATA_DIR = _saved_data_dir
 
 
 def test_save_and_load():

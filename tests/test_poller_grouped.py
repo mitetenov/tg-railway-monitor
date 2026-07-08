@@ -91,7 +91,7 @@ def _make_ride(ride_num, classes):
 
 
 def test_grouping_single_ride_multiple_classes():
-    """All classes for one ride are collected together with English names."""
+    """All classes collected for one ride; unchanged classes excluded from change set."""
     from poller import _state
 
     chat_id = 9001
@@ -107,6 +107,7 @@ def test_grouping_single_ride_multiple_classes():
     chat_state = _state.setdefault(chat_id, {})
     ride_state = {}
 
+    all_classes = []
     changed_classes = []
     for cls in ride.get("availableSeatsClasses", []):
         cls_id = cls.get("seatClassId")
@@ -116,23 +117,25 @@ def test_grouping_single_ride_multiple_classes():
         prev_entry = ride_state.get(str(cls_id))
         prev_seats = prev_entry["seats"] if prev_entry else 0
         if seats > 0:
-            should_notify = prev_entry is None or seats > prev_seats
-            if should_notify:
+            all_classes.append((cls_name, seats, price))
+            if prev_entry is None or seats > prev_seats:
                 changed_classes.append((cls_name, seats, price))
         ride_state[str(cls_id)] = {"seats": seats, "price": price}
 
     chat_state[str(ride.get("rideNumber"))] = ride_state
     _state[chat_id] = chat_state
 
-    # All 3 classes should be collected with English names
+    # First pass: all classes are new → all_classes == changed_classes
+    assert len(all_classes) == 3
     assert len(changed_classes) == 3
-    names = [c[0] for c in changed_classes]
+    names = [c[0] for c in all_classes]
     assert "II Class" in names
     assert "I Class" in names
     assert "Business" in names
 
-    # Second pass — should find nothing new (seats unchanged)
+    # Second pass — all_classes still 3, changed_classes empty (no changes)
     ride_state2 = _state.get(chat_id, {}).get("812", {})
+    all_classes2 = []
     changed_classes2 = []
     for cls in ride.get("availableSeatsClasses", []):
         cls_id = cls.get("seatClassId")
@@ -142,16 +145,17 @@ def test_grouping_single_ride_multiple_classes():
         prev_entry = ride_state2.get(str(cls_id))
         prev_seats = prev_entry["seats"] if prev_entry else 0
         if seats > 0:
-            should_notify = prev_entry is None or seats > prev_seats
-            if should_notify:
+            all_classes2.append((cls_name, seats, price))
+            if prev_entry is None or seats > prev_seats:
                 changed_classes2.append((cls_name, seats, price))
-    assert len(changed_classes2) == 0, "Should not re-notify same classes with same seats"
+    assert len(all_classes2) == 3, "all_classes should still include all available"
+    assert len(changed_classes2) == 0, "Should not detect changes when seats unchanged"
 
     _state.pop(chat_id, None)
 
 
 def test_grouping_multiple_rides():
-    """Each ride gets its own group; classes don't bleed across rides."""
+    """Each ride gets its own group; all_rides includes everything, has_any_changes tracks diffs."""
     from poller import _state
 
     chat_id = 9002
@@ -163,11 +167,13 @@ def test_grouping_multiple_rides():
     ]
 
     chat_state = _state.setdefault(chat_id, {})
-    rides_with_changes = {}
+    all_rides = {}
+    has_any_changes = False
 
     for ride in rides_data:
         ride_num = ride.get("rideNumber")
         ride_state = {}
+        all_classes = []
         changed_classes = []
         for cls in ride.get("availableSeatsClasses", []):
             cls_id = cls.get("seatClassId")
@@ -177,17 +183,22 @@ def test_grouping_multiple_rides():
             prev_entry = ride_state.get(str(cls_id))
             prev_seats = prev_entry["seats"] if prev_entry else 0
             if seats > 0:
-                should_notify = prev_entry is None or seats > prev_seats
-                if should_notify:
+                all_classes.append((cls_name, seats, price))
+                if prev_entry is None or seats > prev_seats:
                     changed_classes.append((cls_name, seats, price))
             ride_state[str(cls_id)] = {"seats": seats, "price": price}
         chat_state[str(ride_num)] = ride_state
+        if all_classes:
+            all_rides[ride_num] = (ride, all_classes)
         if changed_classes:
-            rides_with_changes[ride_num] = (ride, changed_classes)
+            has_any_changes = True
 
-    assert set(rides_with_changes.keys()) == {812, 900}
-    assert len(rides_with_changes[812][1]) == 2  # 2 classes on 812
-    assert len(rides_with_changes[900][1]) == 1  # 1 class on 900
+    # all_rides includes both rides
+    assert set(all_rides.keys()) == {812, 900}
+    assert len(all_rides[812][1]) == 2  # 2 classes on 812
+    assert len(all_rides[900][1]) == 1  # 1 class on 900
+    # First pass: everything is new → has_any_changes is True
+    assert has_any_changes
 
     _state.pop(chat_id, None)
 

@@ -35,9 +35,9 @@ _paused: Dict[int, bool] = {}
 async def _check_and_notify(bot: Bot, chat_id: int) -> None:
     """Single check → notify if tickets appeared or seat count increased.
 
-    Groups all changed seat classes for the same ride into one message.
-    Uses stateful diffing: only notifies on newly-available or
-    increased-seat-count tickets, never re-notifies unchanged tickets.
+    Sends one notification with ALL currently available rides (filtered by
+    user preferences).  Notification is sent only when the stateful diff
+    detects meaningful changes — no spam for unchanged availability.
     """
     config = load_config(chat_id)
     if not config:
@@ -63,17 +63,16 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
 
     _CLASS_FILTER_MAP = {"I": 1, "II": 2, "Business": 5}
 
-    # ── Collect changed classes per ride ────────────────────────────
-    # ride_number -> (ride_dict, [(cls_name, seats, price), ...])
-    rides_with_changes: dict = {}
-
     chat_state = _state.setdefault(chat_id, {})
+    has_any_changes = False
+    all_rides: dict = {}  # ride_number -> (ride_dict, [(cls_name, seats, price), ...])
 
     for ride in rides:
         ride_num = ride.get("rideNumber")
         if ride_num is None:
             continue
 
+        all_classes = []
         changed_classes = []
         classes_raw = ride.get("availableSeatsClasses", [])
         ride_state = chat_state.get(str(ride_num), {})
@@ -90,13 +89,13 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
                 if target_id is not None and cls_id != target_id:
                     continue
 
-            # Stateful diff: only notify on newly-available or increased seats
+            # Stateful diff
             prev_entry = ride_state.get(str(cls_id))
             prev_seats = prev_entry["seats"] if prev_entry else 0
 
             if seats > 0:
-                should_notify = prev_entry is None or seats > prev_seats
-                if should_notify:
+                all_classes.append((cls_name, seats, price))
+                if prev_entry is None or seats > prev_seats:
                     changed_classes.append((cls_name, seats, price))
 
             # Always persist current state
@@ -104,19 +103,21 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
 
         chat_state[str(ride_num)] = ride_state
 
+        if all_classes:
+            all_rides[ride_num] = (ride, all_classes)
         if changed_classes:
-            rides_with_changes[ride_num] = (ride, changed_classes)
+            has_any_changes = True
 
-    if not rides_with_changes:
+    if not has_any_changes:
         return
 
-    # ── Build one grouped notification per ride ─────────────────────
+    # ── Build one grouped notification with ALL available rides ──────
     lines = [
         f"🎫 *{config.get('from_station', '?')}* → *{config.get('to_station', '?')}*",
         f"📅 {date}",
         "",
     ]
-    for ride_num, (ride, class_list) in rides_with_changes.items():
+    for ride_num, (ride, class_list) in all_rides.items():
         dep = format_time(ride.get("rideStartDate") or "")
         arr = format_time(ride.get("rideEndDate") or "")
         dur = ride.get("rideDuration", "?")
