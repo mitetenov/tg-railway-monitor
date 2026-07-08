@@ -404,6 +404,46 @@ class TestCommandHandlers:
             update.message.reply_text.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_stop_shows_start_search_button_when_config_complete(self):
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+
+        complete_config = {
+            "from_station_code": "56014",
+            "to_station_code": "57151",
+            "date": "2026-08-01",
+            "seat_class": "Any",
+        }
+
+        with (
+            patch("bot.poller.stop"),
+            patch("bot.load_config", return_value=complete_config),
+        ):
+            await bot.cmd_stop(update, ctx)
+            kwargs = update.message.reply_text.call_args[1]
+            assert "reply_markup" in kwargs, "Expected inline keyboard when config complete"
+            markup = kwargs["reply_markup"]
+            assert markup.inline_keyboard[0][0].callback_data == "start_search"
+            assert "Start search" in markup.inline_keyboard[0][0].text
+
+    @pytest.mark.asyncio
+    async def test_stop_no_button_when_config_incomplete(self):
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+
+        with (
+            patch("bot.poller.stop"),
+            patch("bot.load_config", return_value={}),
+        ):
+            await bot.cmd_stop(update, ctx)
+            kwargs = update.message.reply_text.call_args[1]
+            assert "reply_markup" not in kwargs, (
+                "Expected no inline keyboard when config incomplete"
+            )
+
+    @pytest.mark.asyncio
     async def test_resume_calls_poller_resume(self):
         import bot
         update = make_update(chat_id=12345)
@@ -422,6 +462,22 @@ class TestCommandHandlers:
         await bot.fallback_handler(update, ctx)
         text = update.message.reply_text.call_args[0][0]
         assert "don't understand" in text.lower()
+
+
+class TestStartSearchCallback:
+
+    @pytest.mark.asyncio
+    async def test_start_search_callback_calls_resume_and_edits(self):
+        import bot
+        update = make_update(chat_id=12345, callback_data="start_search")
+        ctx = make_context()
+
+        with patch("bot.poller.resume", return_value=(True, "✅ Monitoring resumed!")):
+            await bot.cmd_status_start_search(update, ctx)
+            update.callback_query.answer.assert_called_once()
+            update.callback_query.edit_message_text.assert_called_once_with(
+                "✅ Monitoring resumed!", parse_mode="Markdown"
+            )
 
 
 # ═══════════════════════ Cancel Handler ════════════════════════════════
@@ -560,6 +616,57 @@ class TestToStationHandler:
             assert saved["to_station"] == "Batumi"
             assert saved["from_station_code"] == "56014"
             assert saved["to_station_code"] == "57151"
+
+    @pytest.mark.asyncio
+    async def test_to_station_complete_config_starts_poller(self):
+        """When route is set and date + seat_class already exist, auto-start."""
+        import bot
+        bot._stations = [
+            {"code": "56014", "stationName": "Tbilisi", "isPopular": True},
+            {"code": "57151", "stationName": "Batumi", "isPopular": True},
+        ]
+        bot._station_index = {s["code"]: s for s in bot._stations}
+
+        update = make_update(callback_data="to:57151", chat_id=12345)
+        ctx = make_context()
+        ctx.user_data["from_code"] = "56014"
+        ctx.user_data["from_station"] = "Tbilisi"
+
+        # Config already has date and seat_class
+        existing_config = {
+            "date": "2026-07-15",
+            "seat_class": "Any",
+        }
+        with patch("bot.load_config", return_value=existing_config), \
+             patch("bot.save_config") as mock_save, \
+             patch("bot.is_config_complete", return_value=True), \
+             patch("bot.poller.start") as mock_poller_start:
+            result = await bot.to_station_handler(update, ctx)
+            assert result == bot.ConversationHandler.END
+            mock_poller_start.assert_called_once_with(ctx.bot, update.effective_chat.id)
+
+    @pytest.mark.asyncio
+    async def test_to_station_incomplete_config_shows_hint(self):
+        """When route is set but date/seat_class missing, show incomplete hint."""
+        import bot
+        bot._stations = [
+            {"code": "56014", "stationName": "Tbilisi", "isPopular": True},
+            {"code": "57151", "stationName": "Batumi", "isPopular": True},
+        ]
+        bot._station_index = {s["code"]: s for s in bot._stations}
+
+        update = make_update(callback_data="to:57151", chat_id=12345)
+        ctx = make_context()
+        ctx.user_data["from_code"] = "56014"
+        ctx.user_data["from_station"] = "Tbilisi"
+
+        with patch("bot.load_config", return_value={}), \
+             patch("bot.save_config"), \
+             patch("bot.is_config_complete", return_value=False), \
+             patch("bot.poller.start") as mock_poller_start:
+            result = await bot.to_station_handler(update, ctx)
+            assert result == bot.ConversationHandler.END
+            mock_poller_start.assert_not_called()
 
 
 # ═══════════════════════ Conversation: Set Class ═══════════════════════

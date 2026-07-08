@@ -31,11 +31,14 @@
     "config_incomplete": "⚠️ *Config incomplete* — use /setroute, /setdate, /setclass",
     "no_config": "No configuration yet.",
     "start_with_setroute": "Start with /setroute",
+    "start_search_button": "🚀 Start search",
     "active_monitors": "👥 Active monitors: {count}"
   },
 
   "stop": {
-    "stopped": "🛑 Monitoring stopped. Your configuration is preserved.\nUse /setroute to restart."
+    "stopped": "🛑 Monitoring stopped. Your configuration is preserved.",
+    "stopped_with_button": "🛑 Monitoring stopped. Your configuration is preserved.",
+    "start_search_button": "🔍 Start search"
   },
 
   "route": {
@@ -44,7 +47,9 @@
     "station_not_found": "❌ Station not found. Try again.",
     "from_selected": "🚉 *From:* {station_name}\n\nNow select *arrival station:*",
     "same_station": "⚠️ Departure and arrival must be different. Try again.",
-    "saved": "✅ *Route saved:* {from_name} → {to_name}\n\nNext steps:\n  /setdate — set travel date\n  /setclass — choose seat class"
+    "saved": "✅ *Route saved:* {from_name} → {to_name}\n\nNext steps:\n  /setdate — set travel date\n  /setclass — choose seat class",
+    "monitoring_started": "✅ Monitoring started — checking every 60 s!",
+    "incomplete_hint": "Make sure to also set:\n  /setdate — travel date\n  /setclass — seat class"
   },
 
   "date": {
