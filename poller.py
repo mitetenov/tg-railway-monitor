@@ -13,6 +13,7 @@ from telegram.error import TelegramError
 from api import get_available_rides
 from api_tre import TreGeApi
 from config_manager import load_config
+from i18n import get_user_translation
 from ticket_monitor import CLASS_NAMES
 from utils import format_time
 
@@ -111,25 +112,30 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         return
 
     # ── Build one grouped notification with ALL available rides ──────
+    t = get_user_translation(chat_id)
     lines = [
-        f"🎫 *{config.get('from_station', '?')}* → *{config.get('to_station', '?')}*",
-        f"📅 {date}",
+        t("poller.route_header",
+          from_name=config.get("from_station", "?"),
+          to_name=config.get("to_station", "?")),
+        t("poller.date", date=date),
         "",
     ]
     for ride_num, (ride, class_list) in all_rides.items():
         dep = format_time(ride.get("rideStartDate") or "")
         arr = format_time(ride.get("rideEndDate") or "")
         dur = ride.get("rideDuration", "?")
-        lines.append(f"🚆 *Ride #{ride_num}*  {dep} → {arr} ({dur})")
+        lines.append(t("poller.ride",
+                       ride_num=ride_num, departure=dep, arrival=arr, duration=dur))
         # Build purchase link via TreGeApi
         purchase_url = TreGeApi.build_purchase_url(
             config.get("from_station_code", ""),
             config.get("to_station_code", ""),
             date,
         )
-        lines.append(f"🔗 [Купить]({purchase_url})")
+        lines.append(t("poller.purchase_link", url=purchase_url))
         for cls_name, seats, price in class_list:
-            lines.append(f"   {cls_name}: {seats} мест · {price} GEL")
+            lines.append(t("poller.class_info",
+                           class_name=cls_name, seats=seats, price=price))
         lines.append("")
 
     try:
@@ -217,19 +223,21 @@ def resume(bot: Bot, chat_id: int) -> tuple[bool, str]:
 
     config = load_config(chat_id)
     if not config.get("from_station_code") or not config.get("to_station_code"):
+        t = get_user_translation(chat_id)
         return (
             False,
-            "❌ Route not configured. Use /setroute first.",
+            t("poller.not_configured"),
         )
 
     # Clear pause flag so the loop resumes checking
     _paused.pop(chat_id, None)
 
+    t = get_user_translation(chat_id)
     if not is_running(chat_id):
         start(bot, chat_id)
-        return (True, "✅ Monitoring resumed!")
+        return (True, t("poller.resumed"))
     else:
-        return (True, "✅ Monitoring is already active.")
+        return (True, t("poller.already_active"))
 
 
 def active_count() -> int:

@@ -651,3 +651,95 @@ class TestBotUrlRegex:
         assert bot.DATE_RE.match("not-a-date") is None
         assert bot.DATE_RE.match("2026-1-1") is None  # no leading zeros
         assert bot.DATE_RE.match("") is None
+
+
+# ═══════════════════════ /lang Command ══════════════════════════════════
+
+
+class TestLangCommand:
+
+    @pytest.mark.asyncio
+    async def test_lang_shows_current(self):
+        """/lang without args shows the current language."""
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+        ctx.args = []
+
+        with patch("i18n.get_user_language", return_value="en"):
+            await bot.cmd_lang(update, ctx)
+        text = update.message.reply_text.call_args[0][0]
+        assert "Language" in text
+        assert "en" in text
+
+    @pytest.mark.asyncio
+    async def test_lang_change_to_russian(self):
+        """/lang ru changes language to Russian and confirms in Russian."""
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+        ctx.args = ["ru"]
+
+        with patch("i18n.get_user_language", return_value="en"), \
+             patch("config_manager.load_config", return_value={}), \
+             patch("config_manager.save_config") as mock_save, \
+             patch("i18n.clear_user_lang_cache"):
+            await bot.cmd_lang(update, ctx)
+        # Verify config was saved with new language
+        saved = mock_save.call_args[0][1]
+        assert saved["language"] == "ru"
+        # Confirmation sent in Russian
+        text = update.message.reply_text.call_args[0][0]
+        assert "Язык изменён" in text
+
+    @pytest.mark.asyncio
+    async def test_lang_change_to_english_from_russian(self):
+        """/lang en changes language to English when currently RU."""
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+        ctx.args = ["en"]
+
+        with patch("i18n.get_user_language", return_value="ru"), \
+             patch("config_manager.load_config", return_value={"language": "ru"}), \
+             patch("config_manager.save_config") as mock_save, \
+             patch("i18n.clear_user_lang_cache"):
+            await bot.cmd_lang(update, ctx)
+        saved = mock_save.call_args[0][1]
+        assert saved["language"] == "en"
+        text = update.message.reply_text.call_args[0][0]
+        assert "Language changed" in text
+
+    @pytest.mark.asyncio
+    async def test_lang_invalid_code(self):
+        """/lang de returns an error message."""
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+        ctx.args = ["de"]
+
+        with patch("i18n.get_user_language", return_value="en"), \
+             patch("config_manager.load_config"), \
+             patch("config_manager.save_config") as mock_save, \
+             patch("i18n.clear_user_lang_cache"):
+            await bot.cmd_lang(update, ctx)
+        text = update.message.reply_text.call_args[0][0]
+        assert "Invalid" in text or "invalid" in text
+        assert "de" in text
+        mock_save.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_lang_case_insensitive(self):
+        """/lang RU works (case-insensitive)."""
+        import bot
+        update = make_update(chat_id=12345)
+        ctx = make_context()
+        ctx.args = ["RU"]
+
+        with patch("i18n.get_user_language", return_value="en"), \
+             patch("config_manager.load_config", return_value={}), \
+             patch("config_manager.save_config") as mock_save, \
+             patch("i18n.clear_user_lang_cache"):
+            await bot.cmd_lang(update, ctx)
+        saved = mock_save.call_args[0][1]
+        assert saved["language"] == "ru"

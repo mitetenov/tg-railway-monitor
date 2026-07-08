@@ -9,6 +9,7 @@
     "cmd_status": "/status — show current config & polling",
     "cmd_stop": "/stop — stop monitoring",
     "cmd_resume": "/resume — resume monitoring (if route is configured)",
+    "cmd_lang": "/lang [en|ru] — show or change language",
     "current_config": "*Current config:*",
     "route_line": "🚉 {from_name} → {to_name}",
     "date_line": "📅 {date}",
@@ -26,6 +27,7 @@
     "class": "*Class:* {class_name}",
     "monitoring_active": "✅ *Monitoring active* — checking every 60 s",
     "config_complete_not_started": "⏸ *Config complete but polling not started*",
+    "config_complete_hint": "   Start with /setdate or re-send /setroute",
     "config_incomplete": "⚠️ *Config incomplete* — use /setroute, /setdate, /setclass",
     "no_config": "No configuration yet.",
     "start_with_setroute": "Start with /setroute",
@@ -89,5 +91,12 @@
   "n_seats": {
     "one": "{count} seat",
     "other": "{count} seats"
+  },
+
+  "lang": {
+    "current": "🌐 *Language:* English (`en`)",
+    "changed": "✅ Language changed to English (`en`)",
+    "invalid": "❌ Invalid language code `{code}`.\\nAvailable: en (English), ru (Русский)",
+    "cmd_hint": "/lang [en|ru] — show or change language"
   }
 }

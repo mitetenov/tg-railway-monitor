@@ -150,6 +150,7 @@ async def cmd_start(update: Update, _context) -> None:
     lines.append(t("start.cmd_status"))
     lines.append(t("start.cmd_stop"))
     lines.append(t("start.cmd_resume"))
+    lines.append(t("start.cmd_lang"))
 
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -173,7 +174,7 @@ async def cmd_status(update: Update, _context) -> None:
             lines.append(t("status.monitoring_active"))
         elif is_config_complete(config):
             lines.append(t("status.config_complete_not_started"))
-            lines.append("   Start with /setdate or re-send /setroute")
+            lines.append(t("status.config_complete_hint"))
         else:
             lines.append(t("status.config_incomplete"))
     else:
@@ -296,7 +297,9 @@ async def to_station_handler(update: Update, context) -> Optional[int]:
         code = data.split(":", 1)[1]
         station = _station_index.get(code)
         if not station:
-            await query.edit_message_text("❌ Station not found. Try again.")
+            chat_id = update.effective_chat.id
+            t = get_user_translation(chat_id, update.effective_user)
+            await query.edit_message_text(t("route.station_not_found"))
             return ConversationHandler.END
 
         from_name = context.user_data.get("from_station", "?")
@@ -468,6 +471,56 @@ async def cancel_handler(update: Update, _context) -> int:
     return ConversationHandler.END
 
 
+# ═══════════════════════ /lang Command ═══════════════════════════════════
+
+
+async def cmd_lang(update: Update, context) -> None:
+    """Show or change the user's language preference."""
+    chat_id = update.effective_chat.id
+    from config_manager import load_config, save_config  # noqa: PLC0415
+    from i18n import SUPPORTED_LANGUAGES, get_translation, get_user_language
+
+    current_lang = get_user_language(chat_id, update.effective_user)
+    args = context.args
+
+    if not args:
+        # Show current language
+        t = get_translation(current_lang)
+        lang_display = {"en": "English", "ru": "Русский"}.get(current_lang, current_lang)
+        await update.message.reply_text(
+            t("lang.current", lang=current_lang, lang_name=lang_display),
+            parse_mode="Markdown",
+        )
+        return
+
+    code = args[0].lower().strip()
+
+    if code not in SUPPORTED_LANGUAGES:
+        # Invalid language code
+        t = get_translation(current_lang)
+        await update.message.reply_text(
+            t("lang.invalid", code=code),
+            parse_mode="Markdown",
+        )
+        return
+
+    # Valid language code — update and confirm in the new language
+    config = load_config(chat_id)
+    config["language"] = code
+    save_config(chat_id, config)
+
+    # Bust the in-memory cache so subsequent lookups use the new language
+    from i18n import clear_user_lang_cache
+    clear_user_lang_cache()
+
+    t = get_translation(code)
+    lang_display = {"en": "English", "ru": "Русский"}.get(code, code)
+    await update.message.reply_text(
+        t("lang.changed", lang=code, lang_name=lang_display),
+        parse_mode="Markdown",
+    )
+
+
 # ═══════════════════ Fallback text handler ═══════════════════════════
 
 async def fallback_handler(update: Update, _context) -> None:
@@ -492,6 +545,7 @@ async def post_init(application: Application) -> None:
     await application.bot.set_my_commands(
         [
             BotCommand("start", "Start the bot and show help"),
+            BotCommand("lang", "Change language / Сменить язык"),
             BotCommand("setroute", "Set departure and arrival stations"),
             BotCommand("setdate", "Set travel date"),
             BotCommand("setclass", "Select seat class"),
@@ -508,6 +562,7 @@ def main() -> None:
 
     # ── Simple commands ──
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("lang", cmd_lang))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("resume", cmd_resume))

@@ -9,6 +9,7 @@
     "cmd_status": "/status — показать текущую конфигурацию и статус",
     "cmd_stop": "/stop — остановить мониторинг",
     "cmd_resume": "/resume — возобновить мониторинг (если маршрут настроен)",
+    "cmd_lang": "/lang [en|ru] — показать или сменить язык",
     "current_config": "*Текущая конфигурация:*",
     "route_line": "🚉 {from_name} → {to_name}",
     "date_line": "📅 {date}",
@@ -26,6 +27,7 @@
     "class": "*Класс:* {class_name}",
     "monitoring_active": "✅ *Мониторинг активен* — проверка каждые 60 с",
     "config_complete_not_started": "⏸ *Конфигурация готова, но мониторинг не запущен*",
+    "config_complete_hint": "   Начните с /setdate или отправьте /setroute заново",
     "config_incomplete": "⚠️ *Конфигурация неполная* — используйте /setroute, /setdate, /setclass",
     "no_config": "Конфигурация ещё не задана.",
     "start_with_setroute": "Начните с /setroute",
@@ -91,5 +93,12 @@
     "few": "{count} места",
     "many": "{count} мест",
     "other": "{count} мест"
+  },
+
+  "lang": {
+    "current": "🌐 *Язык:* Русский (`ru`)",
+    "changed": "✅ Язык изменён на Русский (`ru`)",
+    "invalid": "❌ Неверный код языка `{code}`.\\nДоступно: en (English), ru (Русский)",
+    "cmd_hint": "/lang [en|ru] — показать или сменить язык"
   }
 }
