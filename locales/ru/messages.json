@@ -56,7 +56,10 @@
     "ride": "🚆 *Рейс #{ride_num}*  {departure} → {arrival} ({duration})",
     "purchase_link": "🔗 [Купить]({url})",
     "class_info": "{class_name}: {seats} мест · {price} GEL",
-    "class_info_ru": "{class_name}: {seats} мест · {price} GEL"
+    "class_info_ru": "{class_name}: {seats} мест · {price} GEL",
+    "not_configured": "Маршрут не настроен. Используйте /start для настройки мониторинга.",
+    "resumed": "✅ Мониторинг возобновлён.",
+    "already_active": "ℹ️ Мониторинг уже активен."
   },
 
   "button": {

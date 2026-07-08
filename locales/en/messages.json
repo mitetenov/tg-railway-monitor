@@ -10,7 +10,7 @@
     "monitoring_active": "✅ *Monitoring active* — checking every 60 s",
     "monitoring_paused": "⏸ *Monitoring paused*",
     "no_config_yet": "No configuration yet.",
-    "start_with_setroute": "Start with /setroute"
+    "start_with_setroute": "Start with /start"
   },
 
   "wizard": {
@@ -56,7 +56,10 @@
     "ride": "🚆 *Ride #{ride_num}*  {departure} → {arrival} ({duration})",
     "purchase_link": "🔗 [Purchase]({url})",
     "class_info": "{class_name}: {seats} seats · {price} GEL",
-    "class_info_ru": "{class_name}: {seats} seats · {price} GEL"
+    "class_info_ru": "{class_name}: {seats} seats · {price} GEL",
+    "not_configured": "Route not configured. Use /start to set up monitoring.",
+    "resumed": "✅ Monitoring resumed.",
+    "already_active": "ℹ️ Monitoring is already active."
   },
 
   "button": {
