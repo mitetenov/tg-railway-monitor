@@ -13,7 +13,7 @@ _STATION_DATA: list[tuple[str, str, str, bool, str]] = [
     ("56014", "Tbilisi",              "Tbilisi",           True,  "თბილისი"),
     ("57151", "Batumi",               "Batumi",            True,  "ბათუმი"),
     ("57450", "Kutaisi Airport",      "Kutaisi%20Airport", True,  "ქუთაისის საერთაშორისო აეროპორტი"),
-    ("",      "Kutaisi",              "Kutaisi",           False, "ქუთაისი"),
+    ("57530", "Kutaisi",              "Kutaisi",           True,  "ქუთაისი"),
     ("57290", "Zugdidi",              "Zugdidi",           True,  "ზუგდიდი"),
     ("57120", "Kobuleti",             "Kobuleti",          True,  "ქობულეთი"),
     ("57100", "Ozurgeti",             "Ozurgeti",          True,  "ოზურგეთი"),
