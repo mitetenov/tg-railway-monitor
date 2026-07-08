@@ -253,8 +253,8 @@ class TestRealLocaleFiles:
         clear_cache()
         t = get_translation("en")
         expected_sections = [
-            "start", "status", "stop", "route", "date",
-            "class", "fallback", "poller", "button", "n_seats",
+            "start", "wizard", "stop",
+            "fallback", "poller", "button", "n_seats",
         ]
         for section in expected_sections:
             # Each section must have at least one non-empty top-level key
@@ -293,3 +293,65 @@ class TestRealLocaleFiles:
         assert "🚉" in result
         assert "Tbilisi" in result
         assert "Batumi" in result
+
+    # ═══════════════════════ Wizard keys ════════════════════════════════
+
+    def test_en_wizard_date_select(self):
+        clear_cache()
+        t = get_translation("en")
+        assert t("wizard.date_select") != "?wizard.date_select?"
+
+    def test_en_wizard_date_buttons(self):
+        clear_cache()
+        t = get_translation("en")
+        assert t("wizard.date_today_btn") != "?wizard.date_today_btn?"
+        assert t("wizard.date_tomorrow_btn") != "?wizard.date_tomorrow_btn?"
+        assert t("wizard.date_custom_btn") != "?wizard.date_custom_btn?"
+
+    def test_en_wizard_station_buttons(self):
+        clear_cache()
+        t = get_translation("en")
+        assert "Tbilisi" in t("wizard.station_tbilisi_btn")
+        assert "Batumi" in t("wizard.station_batumi_btn")
+        assert t("wizard.station_all_btn") != "?wizard.station_all_btn?"
+
+    def test_en_wizard_class_buttons(self):
+        clear_cache()
+        t = get_translation("en")
+        assert t("wizard.class_any_btn") != "?wizard.class_any_btn?"
+        assert t("wizard.class_business_btn") != "?wizard.class_business_btn?"
+        assert t("wizard.class_i_btn") != "?wizard.class_i_btn?"
+        assert t("wizard.class_ii_btn") != "?wizard.class_ii_btn?"
+
+    def test_en_wizard_monitoring_started(self):
+        clear_cache()
+        t = get_translation("en")
+        msg = t("wizard.monitoring_started")
+        assert "Monitoring started" in msg or "All set" in msg
+        assert "/stop" in msg
+
+    def test_en_wizard_stop_confirm(self):
+        clear_cache()
+        t = get_translation("en")
+        assert t("wizard.stop_confirm") != "?wizard.stop_confirm?"
+        assert t("wizard.stop_confirm_btn") != "?wizard.stop_confirm_btn?"
+        assert t("wizard.stop_cancel_btn") != "?wizard.stop_cancel_btn?"
+
+    def test_en_wizard_interpolation(self):
+        clear_cache()
+        t = get_translation("en")
+        result = t("wizard.route_saved", from_name="Tbilisi", to_name="Batumi")
+        assert "Tbilisi" in result
+        assert "Batumi" in result
+        result2 = t("wizard.class_set", class_name="Business")
+        assert "Business" in result2
+        result3 = t("wizard.date_set", date="2026-07-15")
+        assert "2026-07-15" in result3
+
+    def test_ru_wizard_sections(self):
+        clear_cache()
+        t = get_translation("ru")
+        assert t("wizard.date_select") != "?wizard.date_select?"
+        assert t("wizard.select_departure") != "?wizard.select_departure?"
+        assert t("wizard.select_class") != "?wizard.select_class?"
+        assert t("wizard.monitoring_started") != "?wizard.monitoring_started?"
