@@ -1,19 +1,14 @@
-# ─── tkt.ge Telegram Ticket Monitor — Docker image ───────────────────────
+# ─── Telegram Ticket Monitor — Docker image ──────────────────────────────
 #
 # Build with version (recommended):
 #   VERSION=$(cat version.txt)
 #   docker build --build-arg VERSION=$VERSION \
-#     -t tg-ticket-monitor:$VERSION \
-#     -t tg-ticket-monitor:latest .
+#     -t mitetenov/tg-ticket-monitor:$VERSION \
+#     -t mitetenov/tg-ticket-monitor:latest .
 #
-# Quick build (no version arg — uses 0.0.0 as fallback):
-#   docker build -t tg-ticket-monitor .
-#
-# Run:
-#   docker run -d --restart unless-stopped \
-#     --name tg-ticket-monitor \
-#     -e BOT_TOKEN=your_token_here \
-#     tg-ticket-monitor
+# Push:
+#   docker push mitetenov/tg-ticket-monitor:$VERSION
+#   docker push mitetenov/tg-ticket-monitor:latest
 #
 # Environment variables:
 #   BOT_TOKEN   (required) — Telegram bot token from @BotFather
@@ -24,7 +19,7 @@ FROM python:3.11-alpine
 ARG VERSION=0.0.0
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.title="tg-ticket-monitor"
-LABEL org.opencontainers.image.description="Telegram bot for monitoring tkt.ge ticket availability"
+LABEL org.opencontainers.image.description="Telegram bot for monitoring train ticket availability"
 
 # ── OS-level dependencies ───────────────────────────────────────────────
 # tzdata for timezone support (used by datetime logic); clean apk caches
