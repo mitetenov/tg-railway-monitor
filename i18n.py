@@ -276,3 +276,44 @@ def get_user_translation(chat_id: int, user=None) -> Translation:
 def clear_user_lang_cache() -> None:
     """Purge the in-memory user-language cache (useful in tests)."""
     _user_lang_cache.clear()
+
+
+# ═══════════════════ Station name translation ═════════════════════
+
+
+def translate_station_name(station_key: str, lang: str) -> str:
+    """Translate a station name into the requested language.
+
+    Parameters
+    ----------
+    station_key : str
+        The English station name (e.g. ``"Tbilisi"``, ``"Batumi"``).
+        This is the canonical key used in ``stations.py``.
+    lang : str
+        Target language code. Supported: ``"en"``, ``"ru"``, ``"ka"``.
+
+    Returns
+    -------
+    str
+        The station name in the requested language.  Falls back to the
+        English (transliterated) name when a translation is not available
+        for the requested language.
+    """
+    if lang == "en":
+        return station_key
+
+    # Lazy import to avoid circular dependency (stations.py is standalone,
+    # but i18n is imported early in the startup path).
+    from stations import STATION_NAMES_RU, STATION_NAMES_KA  # noqa: PLC0415
+
+    table: dict[str, str] | None = None
+    if lang == "ru":
+        table = STATION_NAMES_RU
+    elif lang == "ka":
+        table = STATION_NAMES_KA
+
+    if table is not None:
+        return table.get(station_key, station_key)
+
+    # Unknown language — return the English name.
+    return station_key

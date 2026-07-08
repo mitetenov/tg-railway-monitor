@@ -16,6 +16,7 @@ from i18n import (
     clear_cache,
     get_translation,
     load_translations,
+    translate_station_name,
 )
 
 
@@ -293,6 +294,89 @@ class TestRealLocaleFiles:
         assert "🚉" in result
         assert "Tbilisi" in result
         assert "Batumi" in result
+
+# ═══════════════════════ translate_station_name ═══════════════════
+
+
+class TestTranslateStationName:
+    """Tests for translate_station_name()."""
+
+    # ── English ────────────────────────────────────────────────────
+
+    def test_en_returns_station_key(self):
+        """English should return the station key as-is."""
+        result = translate_station_name("Tbilisi", "en")
+        assert result == "Tbilisi"
+
+    def test_en_does_not_import_russian(self):
+        """English path should be fast — no dict lookup."""
+        result = translate_station_name("Mtskheta", "en")
+        assert result == "Mtskheta"
+
+    # ── Russian ────────────────────────────────────────────────────
+
+    def test_ru_known_station(self):
+        """Known station should return the Russian name."""
+        result = translate_station_name("Tbilisi", "ru")
+        assert result == "Тбилиси"
+
+    def test_ru_airport(self):
+        result = translate_station_name("Kutaisi Airport", "ru")
+        assert result == "Аэропорт Кутаиси"
+
+    def test_ru_unknown_falls_back_to_en(self):
+        """Unknown station key falls back to English."""
+        result = translate_station_name("NonExistentStation", "ru")
+        assert result == "NonExistentStation"
+
+    # ── Georgian ──────────────────────────────────────────────────
+
+    def test_ka_known_station(self):
+        """Known station should return the Georgian name."""
+        result = translate_station_name("Tbilisi", "ka")
+        assert result == "თბილისი"
+
+    def test_ka_batumi(self):
+        result = translate_station_name("Batumi", "ka")
+        assert result == "ბათუმი"
+
+    def test_ka_poti(self):
+        result = translate_station_name("Poti", "ka")
+        assert result == "ფოთი"
+
+    def test_ka_unknown_falls_back_to_en(self):
+        """Unknown station key falls back to English."""
+        result = translate_station_name("NonExistentStation", "ka")
+        assert result == "NonExistentStation"
+
+    # ── Fallback for unsupported languages ─────────────────────────
+
+    def test_unsupported_lang_falls_back_to_en(self):
+        """Unsupported language code returns the English name."""
+        result = translate_station_name("Tbilisi", "fr")
+        assert result == "Tbilisi"
+
+    # ── All 20 stations in RU ─────────────────────────────────────
+
+    def test_ru_all_stations_have_translation(self):
+        """Every station defined in _STATION_DATA has a Russian name."""
+        from stations import STATION_NAMES_RU, _STATION_DATA  # noqa: PLC0415
+
+        for _, name, *_ in _STATION_DATA:
+            translated = translate_station_name(name, "ru")
+            assert translated != name, f"Station '{name}' has no Russian translation"
+            assert translated == STATION_NAMES_RU[name]
+
+    # ── All 20 stations in KA ─────────────────────────────────────
+
+    def test_ka_all_stations_have_translation(self):
+        """Every station defined in _STATION_DATA has a Georgian name."""
+        from stations import STATION_NAMES_KA, _STATION_DATA  # noqa: PLC0415
+
+        for _, name, *_ in _STATION_DATA:
+            translated = translate_station_name(name, "ka")
+            assert translated != name, f"Station '{name}' has no Georgian translation"
+            assert translated == STATION_NAMES_KA[name]
 
     # ═══════════════════════ Wizard keys ════════════════════════════════
 
