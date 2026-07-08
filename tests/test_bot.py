@@ -204,6 +204,7 @@ class TestQuickStationKeyboard:
     def test_quick_station_keyboard_structure(self):
         import bot
         t = MagicMock()
+        t.lang = "en"
         t.side_effect = lambda key: {
             "wizard.station_tbilisi_btn": "🏛 Tbilisi",
             "wizard.station_batumi_btn": "🏖 Batumi",

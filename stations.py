@@ -53,6 +53,39 @@ FALLBACK_STATIONS: list[dict] = [
 ]
 """Backward-compatible fallback list used by bot.py when the API is down."""
 
+# ── Localised names ─────────────────────────────────────────────────────
+
+STATION_NAMES_RU: dict[str, str] = {
+    "Tbilisi": "Тбилиси",
+    "Batumi": "Батуми",
+    "Kutaisi Airport": "Аэропорт Кутаиси",
+    "Kutaisi": "Кутаиси",
+    "Zugdidi": "Зугдиди",
+    "Kobuleti": "Кобулети",
+    "Ozurgeti": "Озургети",
+    "Senaki": "Сенаки",
+    "Samtredia": "Самтредиа",
+    "Ureki": "Уреки",
+    "Poti": "Поти",
+    "Gori": "Гори",
+    "Khashuri": "Хашури",
+    "Zestafoni": "Зестафони",
+    "Rioni": "Риони",
+    "Nigoiti": "Нигоити",
+    "Mtskheta": "Мцхета",
+    "Kaspi": "Каспи",
+    "Borjomi": "Боржоми",
+    "Akhaltsikhe": "Ахалцихе",
+}
+"""English station name → Russian name, e.g. ``"Tbilisi" → "Тбилиси"``.
+Verified against Russian Wikipedia where available."""
+
+STATION_NAMES_KA: dict[str, str] = {
+    name: geo for _, name, _, _, geo in _STATION_DATA
+}
+"""English station name → Georgian (ქართული) name, e.g. ``"Tbilisi" → "თბილისი"``.
+Derived from ``_STATION_DATA``."""
+
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def station_to_slug(name: str) -> str:

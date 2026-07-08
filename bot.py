@@ -24,7 +24,7 @@ from telegram.ext import (
 import poller
 from api import get_stations
 from config_manager import delete_config, load_config, is_config_complete, save_config
-from i18n import get_user_translation
+from i18n import get_user_language, get_user_translation, translate_station_name
 from stations import FALLBACK_STATIONS, STATION_SLUGS
 
 logging.basicConfig(
@@ -70,10 +70,11 @@ async def load_stations() -> None:
     logger.info("Loaded %d stations", len(_stations))
 
 
-def station_name_for_code(code: str) -> str:
-    """Return the display name for a station code, or the code itself."""
+def station_name_for_code(code: str, lang: str = "en") -> str:
+    """Return the translated display name for a station code, or the code itself."""
     station = _station_index.get(code)
-    return station.get("stationName", code) if station else code
+    raw = station.get("stationName", code) if station else code
+    return translate_station_name(raw, lang)
 
 
 # ── Paginated keyboard (all stations, excluding quick-picks) ─────────
@@ -106,11 +107,12 @@ def build_station_keyboard(action: str, page: int = 0, t=None) -> InlineKeyboard
     start = page * STATIONS_PER_PAGE
     end = min(start + STATIONS_PER_PAGE, total)
 
+    lang = t.lang if t else "en"
     cancel_label = t("button.cancel") if t else "🚫 Cancel"
 
     keyboard = []
     for s in filtered[start:end]:
-        name = s.get("stationName", "?")
+        name = translate_station_name(s.get("stationName", "?"), lang)
         code = str(s.get("code", ""))
         keyboard.append([InlineKeyboardButton(name, callback_data=f"{action}:{code}")])
 
@@ -138,10 +140,13 @@ def build_date_keyboard(t) -> InlineKeyboardMarkup:
 
 def build_quick_station_keyboard(action: str, t) -> InlineKeyboardMarkup:
     """Inline keyboard with Tbilisi / Batumi quick-picks + 'All stations'."""
+    lang = t.lang
+    tbilisi_name = translate_station_name("Tbilisi", lang)
+    batumi_name = translate_station_name("Batumi", lang)
     keyboard = [
         [
-            InlineKeyboardButton(t("wizard.station_tbilisi_btn"), callback_data=f"{action}:{TBILISI_CODE}"),
-            InlineKeyboardButton(t("wizard.station_batumi_btn"), callback_data=f"{action}:{BATUMI_CODE}"),
+            InlineKeyboardButton(tbilisi_name, callback_data=f"{action}:{TBILISI_CODE}"),
+            InlineKeyboardButton(batumi_name, callback_data=f"{action}:{BATUMI_CODE}"),
         ],
         [InlineKeyboardButton(t("wizard.station_all_btn"), callback_data=f"{action}:all")],
         [InlineKeyboardButton(t("button.cancel"), callback_data="cancel")],
@@ -316,6 +321,7 @@ async def wizard_departure_handler(update: Update, context) -> int:
             await query.edit_message_text(t("wizard.station_not_found"))
             return DEPARTURE_SELECT
         context.user_data["from_code"] = code
+        # Keep the English name for storage (canonical key)
         context.user_data["from_station"] = station.get("stationName", "?")
         return await _show_arrival(update, context, code, station.get("stationName", "?"))
 
@@ -327,7 +333,11 @@ async def _show_arrival(update: Update, context,
     """Show arrival station selection."""
     chat_id = update.effective_chat.id
     t = get_user_translation(chat_id, update.effective_user)
-    name = from_name or context.user_data.get("from_station", "?")
+    # Translate the station name for display
+    name = translate_station_name(
+        from_name or context.user_data.get("from_station", "?"),
+        t.lang,
+    )
     text = t("wizard.from_selected", station_name=name)
     reply_markup = build_quick_station_keyboard("wiz_to", t)
 
@@ -384,9 +394,10 @@ async def wizard_arrival_handler(update: Update, context) -> int:
             return ARRIVAL_SELECT
 
         context.user_data["to_code"] = code
+        # Keep the English name for storage (canonical key)
         context.user_data["to_station"] = station.get("stationName", "?")
 
-        # Save route to config
+        # Save route to config — store English canonical names
         config = load_config(chat_id)
         config["from_station"] = context.user_data["from_station"]
         config["from_station_code"] = context.user_data["from_code"]
@@ -395,9 +406,9 @@ async def wizard_arrival_handler(update: Update, context) -> int:
         config["date"] = context.user_data.get("date", "")
         save_config(chat_id, config)
 
-        # Confirm route and proceed to class selection
-        from_name = context.user_data["from_station"]
-        to_name = station.get("stationName", "?")
+        # Confirm route and proceed to class selection — translate for display
+        from_name = translate_station_name(context.user_data["from_station"], t.lang)
+        to_name = translate_station_name(station.get("stationName", "?"), t.lang)
         await query.edit_message_text(
             t("wizard.route_saved", from_name=from_name, to_name=to_name),
             parse_mode="Markdown",

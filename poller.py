@@ -13,7 +13,7 @@ from telegram.error import TelegramError
 from api import get_available_rides
 from api_tre import TreGeApi
 from config_manager import load_config
-from i18n import get_user_translation
+from i18n import get_user_language, get_user_translation, translate_station_name
 from ticket_monitor import CLASS_NAMES
 from utils import format_time
 
@@ -113,10 +113,12 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
 
     # ── Build one grouped notification with ALL available rides ──────
     t = get_user_translation(chat_id)
+    from_name_display = translate_station_name(config.get("from_station", "?"), t.lang)
+    to_name_display = translate_station_name(config.get("to_station", "?"), t.lang)
     lines = [
         t("poller.route_header",
-          from_name=config.get("from_station", "?"),
-          to_name=config.get("to_station", "?")),
+          from_name=from_name_display,
+          to_name=to_name_display),
         t("poller.date", date=date),
         "",
     ]
