@@ -1,15 +1,8 @@
 {
   "start": {
     "welcome": "👋 *Мониторинг билетов Tre.ge*",
-    "description": "Я проверяю наличие билетов на поезда Грузинской железной дороги и уведомляю вас.",
-    "no_config": "Используйте команды ниже, чтобы настроить мониторинг:",
-    "cmd_setroute": "/setroute — выбрать станцию отправления и прибытия",
-    "cmd_setdate": "/setdate — указать дату поездки",
-    "cmd_setclass": "/setclass — выбрать класс места",
-    "cmd_status": "/status — показать текущую конфигурацию и статус",
-    "cmd_stop": "/stop — остановить мониторинг",
-    "cmd_resume": "/resume — возобновить мониторинг (если маршрут настроен)",
-    "cmd_lang": "/lang [en|ru] — показать или сменить язык",
+    "description": "Я помогу настроить мониторинг билетов за несколько шагов.",
+    "config_active": "📋 *Текущий мониторинг:*\n🚉 {from_name} → {to_name}\n📅 {date}\n💺 Класс: {class_name}\n\n✅ *Мониторинг активен* — проверка каждые 60 с\nИспользуйте /stop для отмены.",
     "current_config": "*Текущая конфигурация:*",
     "route_line": "🚉 {from_name} → {to_name}",
     "date_line": "📅 {date}",
@@ -17,57 +10,44 @@
     "monitoring_active": "✅ *Мониторинг активен* — проверка каждые 60 с",
     "monitoring_paused": "⏸ *Мониторинг приостановлен*",
     "no_config_yet": "Конфигурация ещё не задана.",
-    "start_with_setroute": "Начните с /setroute"
+    "start_with_setroute": "Начните с /start"
   },
 
-  "status": {
-    "title": "*📊 Статус*",
-    "route": "*Маршрут:* {from_name} → {to_name}",
-    "date": "*Дата:* {date}",
-    "class": "*Класс:* {class_name}",
-    "monitoring_active": "✅ *Мониторинг активен* — проверка каждые 60 с",
-    "config_complete_not_started": "⏸ *Конфигурация готова, но мониторинг не запущен*",
-    "config_complete_hint": "   Начните с /setdate или отправьте /setroute заново",
-    "config_incomplete": "⚠️ *Конфигурация неполная* — используйте /setroute, /setdate, /setclass",
-    "no_config": "Конфигурация ещё не задана.",
-    "start_with_setroute": "Начните с /setroute",
-    "active_monitors": "👥 Активных мониторов: {count}"
+  "wizard": {
+    "date_select": "📅 *Выберите дату поездки:*",
+    "date_today_btn": "📅 Сегодня",
+    "date_tomorrow_btn": "📅 Завтра",
+    "date_custom_btn": "✏️ Своя дата...",
+    "date_custom_prompt": "📅 *Введите дату поездки*\n\nФормат: `YYYY-MM-DD`\nПример: `2026-07-15`",
+    "date_invalid": "❌ Неверная дата. Используйте формат `YYYY-MM-DD`.",
+    "date_past": "❌ Дата в прошлом. Попробуйте снова.",
+    "date_set": "✅ Дата установлена: *{date}*",
+    "date_today_set": "✅ Дата установлена: *сегодня* ({date})",
+    "date_tomorrow_set": "✅ Дата установлена: *завтра* ({date})",
+    "select_departure": "🚉 *Выберите станцию отправления:*",
+    "select_arrival": "🚉 *Выберите станцию прибытия:*",
+    "from_selected": "🚉 *Отправление:* {station_name}\n\nТеперь выберите *станцию прибытия:*",
+    "station_tbilisi_btn": "🏛 Тбилиси",
+    "station_batumi_btn": "🏖 Батуми",
+    "station_all_btn": "📋 Все станции...",
+    "station_not_found": "❌ Станция не найдена. Попробуйте снова.",
+    "station_same": "⚠️ Станции отправления и прибытия должны различаться.",
+    "route_saved": "✅ *Маршрут сохранён:* {from_name} → {to_name}",
+    "select_class": "💺 *Выберите класс места:*",
+    "class_any_btn": "✨ Любой",
+    "class_business_btn": "💼 Business",
+    "class_i_btn": "🥇 I класс",
+    "class_ii_btn": "🥈 II класс",
+    "class_set": "✅ Класс места установлен: *{class_name}*",
+    "cancelled": "🚫 Отменено.",
+    "monitoring_started": "✅ *Готово! Мониторинг запущен* — проверка каждые 60 с 🚀\n\nЯ сообщу, когда появятся билеты. Используйте /stop для отмены.",
+    "stop_confirm": "🛑 *Остановить мониторинг?*\n\nЭто удалит вашу конфигурацию и остановит проверку билетов.",
+    "stop_confirm_btn": "🛑 Да, остановить",
+    "stop_cancel_btn": "↩️ Нет, продолжить"
   },
 
   "stop": {
-    "stopped": "🛑 Мониторинг остановлен. Ваша конфигурация сохранена.\nИспользуйте /setroute для перезапуска."
-  },
-
-  "route": {
-    "select_from": "🚉 *Выберите станцию отправления:*",
-    "cancelled": "🚫 Отменено.",
-    "station_not_found": "❌ Станция не найдена. Попробуйте снова.",
-    "from_selected": "🚉 *Отправление:* {station_name}\n\nТеперь выберите *станцию прибытия:*",
-    "same_station": "⚠️ Станции отправления и прибытия должны различаться. Попробуйте снова.",
-    "saved": "✅ *Маршрут сохранён:* {from_name} → {to_name}\n\nСледующие шаги:\n  /setdate — указать дату поездки\n  /setclass — выбрать класс места"
-  },
-
-  "date": {
-    "prompt": "📅 *Укажите дату поездки*\n\nФормат: `YYYY-MM-DD`\nПримеры: `2026-07-15`, `today`, `tomorrow`, `+3` (дней от сегодня)",
-    "invalid_format": "❌ Неверный формат. Используйте `+3` или `YYYY-MM-DD`.",
-    "past_date": "❌ Дата в прошлом. Попробуйте снова.",
-    "invalid_date": "❌ Неверная дата. Используйте формат `YYYY-MM-DD`.",
-    "unrecognised": "❌ Я не понимаю. Используйте `YYYY-MM-DD`, `today` или `tomorrow`.",
-    "set": "✅ Дата установлена: *{date}*",
-    "monitoring_started": "✅ Мониторинг запущен — проверка каждые 60 с!",
-    "incomplete_hint": "Убедитесь, что также заданы:\n  /setroute — маршрут\n  /setclass — класс места"
-  },
-
-  "class": {
-    "select": "💺 *Выберите класс места:*",
-    "cancelled": "🚫 Отменено.",
-    "set": "✅ Класс места установлен: *{class_name}*",
-    "monitoring_started": "✅ Мониторинг запущен — проверка каждые 60 с!",
-    "incomplete_hint": "Убедитесь, что также заданы:\n  /setroute — маршрут\n  /setdate — дата поездки"
-  },
-
-  "fallback": {
-    "unrecognised": "Я не понимаю эту команду.\nПопробуйте /start, чтобы увидеть доступные команды."
+    "stopped": "🛑 Мониторинг остановлен и конфигурация удалена.\nИспользуйте /start, чтобы настроить заново."
   },
 
   "poller": {
@@ -77,9 +57,9 @@
     "purchase_link": "🔗 [Купить]({url})",
     "class_info": "{class_name}: {seats} мест · {price} GEL",
     "class_info_ru": "{class_name}: {seats} мест · {price} GEL",
-    "not_configured": "❌ Маршрут не настроен. Используйте /setroute сначала.",
-    "resumed": "✅ Мониторинг возобновлён!",
-    "already_active": "✅ Мониторинг уже активен."
+    "not_configured": "Маршрут не настроен. Используйте /start для настройки мониторинга.",
+    "resumed": "✅ Мониторинг возобновлён.",
+    "already_active": "ℹ️ Мониторинг уже активен."
   },
 
   "button": {
@@ -95,10 +75,7 @@
     "other": "{count} мест"
   },
 
-  "lang": {
-    "current": "🌐 *Язык:* Русский (`ru`)",
-    "changed": "✅ Язык изменён на Русский (`ru`)",
-    "invalid": "❌ Неверный код языка `{code}`.\\nДоступно: en (English), ru (Русский)",
-    "cmd_hint": "/lang [en|ru] — показать или сменить язык"
+  "fallback": {
+    "unrecognised": "Я не понимаю эту команду.\nНачните с /start для настройки."
   }
 }

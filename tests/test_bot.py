@@ -1,4 +1,5 @@
-"""Tests for bot.py — Telegram bot handlers, station loading, date parsing.
+"""
+Tests for bot.py — Telegram bot handlers, wizard flow, station loading, and stop.
 
 Uses mocked PTB Update objects to test command handlers and conversation
 flows without a real Telegram connection.
@@ -14,7 +15,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # bot.py reads BOT_TOKEN from env at import time; set a dummy token
-os.environ["BOT_TOKEN"] = "0000000000:TEST_TOKEN_FOR_UNIT_TESTS"
+os.environ["BOT_TOKEN"] = "0000000:TEST_TOKEN_FOR_UNIT_TESTS"
 
 
 # ═══════════════════════ Helpers ═══════════════════════════════════════
@@ -105,26 +106,27 @@ class TestStationKeyboard:
 
     def setup_method(self):
         import bot
+        # Use stations that do NOT include Tbilisi/Batumi so they're not filtered out
         bot._stations = [
-            {"code": str(56000 + i), "stationName": f"Station{i}", "isPopular": i < 3}
+            {"code": str(57000 + i), "stationName": f"Station{i}", "isPopular": i < 3}
             for i in range(20)
         ]
         bot._station_index = {s["code"]: s for s in bot._stations}
 
     def test_pagination_first_page(self):
         import bot
-        markup = bot.build_station_keyboard("from", 0)
+        markup = bot.build_station_keyboard("wiz_from", 0)
         assert markup is not None
         keyboard = markup.inline_keyboard
         assert len(keyboard) >= 8  # stations per page
-        # Last row should contain nav buttons and cancel
+        # Last row should contain cancel
         last_row = keyboard[-1]
-        assert len(last_row) == 1  # cancel
+        assert len(last_row) == 1
         assert "Cancel" in last_row[0].text
 
     def test_pagination_middle_page(self):
         import bot
-        markup = bot.build_station_keyboard("from", 1)
+        markup = bot.build_station_keyboard("wiz_from", 1)
         keyboard = markup.inline_keyboard
         # Should have prev + page + next in nav row
         nav_row = keyboard[-2]  # second to last is nav
@@ -134,7 +136,7 @@ class TestStationKeyboard:
     def test_pagination_last_page(self):
         import bot
         total_pages = max(1, (len(bot._stations) + bot.STATIONS_PER_PAGE - 1) // bot.STATIONS_PER_PAGE)
-        markup = bot.build_station_keyboard("from", total_pages - 1)
+        markup = bot.build_station_keyboard("wiz_from", total_pages - 1)
         keyboard = markup.inline_keyboard
         nav_row = keyboard[-2]
         assert not any("Next" in b.text for b in nav_row)
@@ -142,79 +144,194 @@ class TestStationKeyboard:
 
     def test_pagination_action_to(self):
         import bot
-        markup = bot.build_station_keyboard("to", 0)
+        markup = bot.build_station_keyboard("wiz_to", 0)
         keyboard = markup.inline_keyboard
         for row in keyboard:
             for btn in row:
-                if btn.callback_data and btn.callback_data.startswith("to:"):
-                    assert "to:" in btn.callback_data
+                if btn.callback_data and btn.callback_data.startswith("wiz_to:"):
+                    assert "wiz_to:" in btn.callback_data
                     return
-        pytest.fail("No 'to:' station found")
+        pytest.fail("No 'wiz_to:' station found")
+
+    def test_quick_pick_stations_filtered_from_paginated(self):
+        """Tbilisi and Batumi should not appear in the paginated keyboard."""
+        import bot
+        # Include Tbilisi and Batumi in stations list
+        bot._stations = [
+            {"code": "56014", "stationName": "Tbilisi", "isPopular": True},
+            {"code": "57151", "stationName": "Batumi", "isPopular": True},
+            {"code": "57000", "stationName": "Kutaisi", "isPopular": True},
+        ]
+        bot._station_index = {s["code"]: s for s in bot._stations}
+
+        markup = bot.build_station_keyboard("wiz_from", 0)
+        keyboard = markup.inline_keyboard
+        texts = [btn.text for row in keyboard for btn in row]
+        assert "Tbilisi" not in texts
+        assert "Batumi" not in texts
+        assert "Kutaisi" in texts
 
 
-# ═══════════════════════ Date Parsing ══════════════════════════════════
+# ═══════════════════════ Date Keyboard ═════════════════════════════════
 
 
-class TestDateParsing:
+class TestDateKeyboard:
+
+    def test_date_keyboard_structure(self):
+        import bot
+        t = MagicMock()
+        t.side_effect = lambda key: {
+            "wizard.date_today_btn": "📅 Today",
+            "wizard.date_tomorrow_btn": "📅 Tomorrow",
+            "wizard.date_custom_btn": "✏️ Custom date...",
+            "button.cancel": "🚫 Cancel",
+        }.get(key, key)
+
+        markup = bot.build_date_keyboard(t)
+        keyboard = markup.inline_keyboard
+        assert len(keyboard) == 3  # 2 date rows + cancel
+        assert keyboard[0][0].callback_data == "wiz_date:today"
+        assert keyboard[0][1].callback_data == "wiz_date:tomorrow"
+        assert keyboard[1][0].callback_data == "wiz_date:custom"
+        assert keyboard[2][0].callback_data == "cancel"
+
+
+# ═══════════════════════ Quick Station Keyboard ════════════════════════
+
+
+class TestQuickStationKeyboard:
+
+    def test_quick_station_keyboard_structure(self):
+        import bot
+        t = MagicMock()
+        t.side_effect = lambda key: {
+            "wizard.station_tbilisi_btn": "🏛 Tbilisi",
+            "wizard.station_batumi_btn": "🏖 Batumi",
+            "wizard.station_all_btn": "📋 All stations...",
+            "button.cancel": "🚫 Cancel",
+        }.get(key, key)
+
+        markup = bot.build_quick_station_keyboard("wiz_from", t)
+        keyboard = markup.inline_keyboard
+        assert len(keyboard) == 3
+        assert keyboard[0][0].callback_data == "wiz_from:56014"
+        assert keyboard[0][1].callback_data == "wiz_from:57151"
+        assert keyboard[1][0].callback_data == "wiz_from:all"
+        assert keyboard[2][0].callback_data == "cancel"
+
+
+# ═══════════════════════ Class Keyboard ════════════════════════════════
+
+
+class TestClassKeyboard:
+
+    def test_class_keyboard_structure(self):
+        import bot
+        t = MagicMock()
+        t.side_effect = lambda key: {
+            "wizard.class_any_btn": "✨ Any",
+            "wizard.class_business_btn": "💼 Business",
+            "wizard.class_i_btn": "🥇 I класс",
+            "wizard.class_ii_btn": "🥈 II класс",
+            "button.cancel": "🚫 Cancel",
+        }.get(key, key)
+
+        markup = bot.build_class_keyboard(t)
+        keyboard = markup.inline_keyboard
+        assert len(keyboard) == 3  # 2 class rows + cancel
+        assert keyboard[0][0].callback_data == "wiz_class:Any"
+        assert keyboard[0][1].callback_data == "wiz_class:Business"
+        assert keyboard[1][0].callback_data == "wiz_class:I"
+        assert keyboard[1][1].callback_data == "wiz_class:II"
+        assert keyboard[2][0].callback_data == "cancel"
+
+
+# ═══════════════════════ /start Wizard Flow ════════════════════════════
+
+
+class TestWizardStart:
 
     @pytest.mark.asyncio
-    async def test_today(self):
+    async def test_cmd_start_shows_date_keyboard(self):
         import bot
-        update = make_update(text="today")
+        bot._stations = [{"code": "56014", "stationName": "Tbilisi", "isPopular": True}]
+        bot._station_index = {"56014": bot._stations[0]}
+
+        update = make_update(chat_id=12345)
         ctx = make_context()
 
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
-             patch("bot.is_config_complete", return_value=False):
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            saved_config = mock_save.call_args[0][1]
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            assert saved_config["date"] == today
+        result = await bot.cmd_start(update, ctx)
+        assert result == bot.DATE_SELECT
+        update.message.reply_text.assert_called_once()
+        args = update.message.reply_text.call_args
+        assert "reply_markup" in args[1]
+        keyboard = args[1]["reply_markup"].inline_keyboard
+        assert keyboard[0][0].callback_data == "wiz_date:today"
+
+
+class TestWizardDateSelection:
 
     @pytest.mark.asyncio
-    async def test_tomorrow(self):
+    async def test_date_today(self):
         import bot
-        update = make_update(text="tomorrow")
+        update = make_update(callback_data="wiz_date:today")
         ctx = make_context()
 
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
-             patch("bot.is_config_complete", return_value=False):
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            saved_config = mock_save.call_args[0][1]
-            tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
-            assert saved_config["date"] == tomorrow
+        with patch.object(bot, "_show_departure", AsyncMock(return_value=bot.DEPARTURE_SELECT)):
+            result = await bot.wizard_date_handler(update, ctx)
+
+        assert result == bot.DEPARTURE_SELECT
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        assert ctx.user_data["date"] == today
 
     @pytest.mark.asyncio
-    async def test_plus_n_days(self):
+    async def test_date_tomorrow(self):
         import bot
-        update = make_update(text="+5")
+        update = make_update(callback_data="wiz_date:tomorrow")
         ctx = make_context()
 
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
-             patch("bot.is_config_complete", return_value=False):
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            saved_config = mock_save.call_args[0][1]
-            expected = (datetime.now(timezone.utc) + timedelta(days=5)).strftime("%Y-%m-%d")
-            assert saved_config["date"] == expected
+        with patch.object(bot, "_show_departure", AsyncMock(return_value=bot.DEPARTURE_SELECT)):
+            result = await bot.wizard_date_handler(update, ctx)
+
+        assert result == bot.DEPARTURE_SELECT
+        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+        assert ctx.user_data["date"] == tomorrow
 
     @pytest.mark.asyncio
-    async def test_iso_date(self):
+    async def test_date_custom_transitions(self):
+        import bot
+        update = make_update(callback_data="wiz_date:custom")
+        ctx = make_context()
+
+        result = await bot.wizard_date_handler(update, ctx)
+
+        assert result == bot.WAITING_CUSTOM_DATE
+        update.callback_query.edit_message_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_date_cancel(self):
+        import bot
+        update = make_update(callback_data="cancel")
+        ctx = make_context()
+
+        result = await bot.wizard_date_handler(update, ctx)
+
+        assert result == bot.ConversationHandler.END
+
+
+class TestWizardCustomDate:
+
+    @pytest.mark.asyncio
+    async def test_valid_iso_date(self):
         import bot
         update = make_update(text="2026-07-15")
         ctx = make_context()
 
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
-             patch("bot.is_config_complete", return_value=False):
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            saved_config = mock_save.call_args[0][1]
-            assert saved_config["date"] == "2026-07-15"
+        with patch.object(bot, "_show_departure", AsyncMock(return_value=bot.DEPARTURE_SELECT)):
+            result = await bot.wizard_custom_date_handler(update, ctx)
+
+        assert result == bot.DEPARTURE_SELECT
+        assert ctx.user_data["date"] == "2026-07-15"
 
     @pytest.mark.asyncio
     async def test_past_date_rejected(self):
@@ -222,196 +339,322 @@ class TestDateParsing:
         update = make_update(text="2020-01-01")
         ctx = make_context()
 
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save:
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.WAITING_DATE  # stay in the conversation
-            mock_save.assert_not_called()
+        result = await bot.wizard_custom_date_handler(update, ctx)
+
+        assert result == bot.WAITING_CUSTOM_DATE
+        assert "date" not in ctx.user_data
 
     @pytest.mark.asyncio
-    async def test_invalid_date_format(self):
+    async def test_invalid_format(self):
         import bot
         update = make_update(text="not-a-date")
         ctx = make_context()
 
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save:
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.WAITING_DATE
-            mock_save.assert_not_called()
+        result = await bot.wizard_custom_date_handler(update, ctx)
+
+        assert result == bot.WAITING_CUSTOM_DATE
 
     @pytest.mark.asyncio
-    async def test_plus_invalid_number(self):
-        import bot
-        update = make_update(text="+abc")
-        ctx = make_context()
-
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save:
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.WAITING_DATE
-            mock_save.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_invalid_date_values(self):
+    async def test_invalid_month(self):
         import bot
         update = make_update(text="2026-13-01")  # month 13
         ctx = make_context()
 
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save:
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.WAITING_DATE
-            mock_save.assert_not_called()
+        result = await bot.wizard_custom_date_handler(update, ctx)
+
+        assert result == bot.WAITING_CUSTOM_DATE
+
+
+class TestWizardDeparture:
 
     @pytest.mark.asyncio
-    async def test_date_today_upper_case(self):
+    async def test_cancel(self):
         import bot
-        update = make_update(text="TODAY")
+        update = make_update(callback_data="cancel")
         ctx = make_context()
 
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
-             patch("bot.is_config_complete", return_value=False):
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            saved_config = mock_save.call_args[0][1]
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            assert saved_config["date"] == today
+        result = await bot.wizard_departure_handler(update, ctx)
 
-
-# ═══════════════════════ Date Auto-Starts Poller ═══════════════════════
-
-
-class TestDateAutoStartsPoller:
+        assert result == bot.ConversationHandler.END
 
     @pytest.mark.asyncio
-    async def test_complete_config_starts_poller(self):
+    async def test_quick_pick_tbilisi(self):
         import bot
-        update = make_update(text="2026-07-15")
+        bot._stations = [{"code": "56014", "stationName": "Tbilisi", "isPopular": True}]
+        bot._station_index = {"56014": bot._stations[0]}
+
+        update = make_update(callback_data="wiz_from:56014")
         ctx = make_context()
 
-        with patch("bot.load_config", return_value={"some": "data"}), \
-             patch("bot.save_config") as mock_save, \
-             patch("bot.is_config_complete", return_value=True), \
-             patch("bot.poller.start") as mock_poller_start:
-            result = await bot.setdate_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            mock_poller_start.assert_called_once_with(ctx.bot, update.effective_chat.id)
+        with patch.object(bot, "_show_arrival", AsyncMock(return_value=bot.ARRIVAL_SELECT)):
+            result = await bot.wizard_departure_handler(update, ctx)
 
-
-# ═══════════════════════ Route Validation ══════════════════════════════
-
-
-class TestRouteValidation:
+        assert result == bot.ARRIVAL_SELECT
+        assert ctx.user_data["from_code"] == "56014"
+        assert ctx.user_data["from_station"] == "Tbilisi"
 
     @pytest.mark.asyncio
-    async def test_same_from_and_to_rejected(self):
-        """Selecting the same station for from and to should show error."""
+    async def test_quick_pick_batumi(self):
+        import bot
+        bot._stations = [{"code": "57151", "stationName": "Batumi", "isPopular": True}]
+        bot._station_index = {"57151": bot._stations[0]}
+
+        update = make_update(callback_data="wiz_from:57151")
+        ctx = make_context()
+
+        with patch.object(bot, "_show_arrival", AsyncMock(return_value=bot.ARRIVAL_SELECT)):
+            result = await bot.wizard_departure_handler(update, ctx)
+
+        assert result == bot.ARRIVAL_SELECT
+        assert ctx.user_data["from_code"] == "57151"
+        assert ctx.user_data["from_station"] == "Batumi"
+
+    @pytest.mark.asyncio
+    async def test_all_stations_shows_paginated(self):
         import bot
         bot._stations = [
-            {"code": "56014", "stationName": "Tbilisi", "isPopular": True},
-            {"code": "57151", "stationName": "Batumi", "isPopular": True},
+            {"code": "57000", "stationName": "Kutaisi", "isPopular": True},
+            {"code": "57290", "stationName": "Zugdidi", "isPopular": True},
         ]
         bot._station_index = {s["code"]: s for s in bot._stations}
 
-        update = make_update(callback_data="to:56014")  # same as from
+        update = make_update(callback_data="wiz_from:all")
+        ctx = make_context()
+
+        result = await bot.wizard_departure_handler(update, ctx)
+
+        assert result == bot.DEPARTURE_SELECT
+        update.callback_query.edit_message_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_pagination(self):
+        import bot
+        bot._stations = [
+            {"code": str(57000 + i), "stationName": f"Station{i}", "isPopular": True}
+            for i in range(20)
+        ]
+        bot._station_index = {s["code"]: s for s in bot._stations}
+
+        update = make_update(callback_data="page:wiz_from:1")
+        ctx = make_context()
+
+        result = await bot.wizard_departure_handler(update, ctx)
+
+        assert result == bot.DEPARTURE_SELECT
+        update.callback_query.edit_message_reply_markup.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_select_from_paginated(self):
+        import bot
+        bot._stations = [{"code": "57000", "stationName": "Kutaisi", "isPopular": True}]
+        bot._station_index = {"57000": bot._stations[0]}
+
+        update = make_update(callback_data="wiz_from:57000")
+        ctx = make_context()
+
+        with patch.object(bot, "_show_arrival", AsyncMock(return_value=bot.ARRIVAL_SELECT)):
+            result = await bot.wizard_departure_handler(update, ctx)
+
+        assert result == bot.ARRIVAL_SELECT
+        assert ctx.user_data["from_code"] == "57000"
+        assert ctx.user_data["from_station"] == "Kutaisi"
+
+
+class TestWizardArrival:
+
+    @pytest.mark.asyncio
+    async def test_cancel(self):
+        import bot
+        update = make_update(callback_data="cancel")
+        ctx = make_context()
+
+        result = await bot.wizard_arrival_handler(update, ctx)
+
+        assert result == bot.ConversationHandler.END
+
+    @pytest.mark.asyncio
+    async def test_quick_pick(self):
+        import bot
+        bot._stations = [{"code": "57151", "stationName": "Batumi", "isPopular": True}]
+        bot._station_index = {"57151": bot._stations[0]}
+
+        update = make_update(callback_data="wiz_to:57151", chat_id=12345)
         ctx = make_context()
         ctx.user_data["from_code"] = "56014"
         ctx.user_data["from_station"] = "Tbilisi"
+        ctx.user_data["date"] = "2026-07-15"
 
-        result = await bot.to_station_handler(update, ctx)
-        # Should stay on TO_STATION state with error message
-        assert result == bot.TO_STATION
+        with patch("bot.load_config", return_value={}), \
+             patch("bot.save_config") as mock_save, \
+             patch.object(bot, "_show_class", AsyncMock(return_value=bot.CLASS_SELECT)):
+            result = await bot.wizard_arrival_handler(update, ctx)
 
-
-# ═══════════════════════ Command Handlers ══════════════════════════════
-
-
-class TestCommandHandlers:
+        assert result == bot.CLASS_SELECT
+        saved = mock_save.call_args[0][1]
+        assert saved["from_station"] == "Tbilisi"
+        assert saved["to_station"] == "Batumi"
+        assert saved["from_station_code"] == "56014"
+        assert saved["to_station_code"] == "57151"
+        assert saved["date"] == "2026-07-15"
 
     @pytest.mark.asyncio
-    async def test_start_with_config(self):
+    async def test_same_station_rejected(self):
+        import bot
+        bot._stations = [{"code": "56014", "stationName": "Tbilisi", "isPopular": True}]
+        bot._station_index = {"56014": bot._stations[0]}
+
+        update = make_update(callback_data="wiz_to:56014")
+        ctx = make_context()
+        ctx.user_data["from_code"] = "56014"
+
+        result = await bot.wizard_arrival_handler(update, ctx)
+
+        assert result == bot.ARRIVAL_SELECT
+        update.callback_query.edit_message_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_all_stations_shows_paginated(self):
+        import bot
+        bot._stations = [
+            {"code": "57000", "stationName": "Kutaisi", "isPopular": True},
+        ]
+        bot._station_index = {"57000": bot._stations[0]}
+
+        update = make_update(callback_data="wiz_to:all")
+        ctx = make_context()
+
+        result = await bot.wizard_arrival_handler(update, ctx)
+
+        assert result == bot.ARRIVAL_SELECT
+        update.callback_query.edit_message_text.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_pagination(self):
+        import bot
+        bot._stations = [
+            {"code": str(57000 + i), "stationName": f"Station{i}", "isPopular": True}
+            for i in range(20)
+        ]
+        bot._station_index = {s["code"]: s for s in bot._stations}
+
+        update = make_update(callback_data="page:wiz_to:0")
+        ctx = make_context()
+
+        result = await bot.wizard_arrival_handler(update, ctx)
+
+        assert result == bot.ARRIVAL_SELECT
+
+
+class TestWizardClassSelection:
+
+    @pytest.mark.asyncio
+    async def test_cancel(self):
+        import bot
+        update = make_update(callback_data="cancel")
+        ctx = make_context()
+
+        result = await bot.wizard_class_handler(update, ctx)
+
+        assert result == bot.ConversationHandler.END
+
+    @pytest.mark.asyncio
+    async def test_select_any_class(self):
+        import bot
+        update = make_update(callback_data="wiz_class:Any", chat_id=12345)
+        ctx = make_context()
+
+        with patch("bot.load_config", return_value={}), \
+             patch("bot.save_config") as mock_save, \
+             patch("bot.poller.start"):
+            result = await bot.wizard_class_handler(update, ctx)
+
+        assert result == bot.ConversationHandler.END
+        saved = mock_save.call_args[0][1]
+        assert saved["seat_class"] == "Any"
+
+    @pytest.mark.asyncio
+    async def test_select_business_starts_poller(self):
+        import bot
+        update = make_update(callback_data="wiz_class:Business", chat_id=12345)
+        ctx = make_context()
+
+        with patch("bot.load_config", return_value={}), \
+             patch("bot.save_config"), \
+             patch("bot.poller.start") as mock_poller_start:
+            result = await bot.wizard_class_handler(update, ctx)
+
+        assert result == bot.ConversationHandler.END
+        mock_poller_start.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_select_class_i(self):
+        import bot
+        update = make_update(callback_data="wiz_class:I", chat_id=12345)
+        ctx = make_context()
+
+        with patch("bot.load_config", return_value={}), \
+             patch("bot.save_config") as mock_save, \
+             patch("bot.poller.start"):
+            result = await bot.wizard_class_handler(update, ctx)
+
+        assert result == bot.ConversationHandler.END
+        saved = mock_save.call_args[0][1]
+        assert saved["seat_class"] == "I"
+
+    @pytest.mark.asyncio
+    async def test_select_class_ii(self):
+        import bot
+        update = make_update(callback_data="wiz_class:II", chat_id=12345)
+        ctx = make_context()
+
+        with patch("bot.load_config", return_value={}), \
+             patch("bot.save_config") as mock_save, \
+             patch("bot.poller.start"):
+            result = await bot.wizard_class_handler(update, ctx)
+
+        assert result == bot.ConversationHandler.END
+        saved = mock_save.call_args[0][1]
+        assert saved["seat_class"] == "II"
+
+
+# ═══════════════════════ /stop Command ═════════════════════════════════
+
+
+class TestStopCommand:
+
+    @pytest.mark.asyncio
+    async def test_stop_calls_poller_stop_and_delete_config(self):
         import bot
         update = make_update(chat_id=12345)
         ctx = make_context()
 
-        config = {
-            "from_station": "Tbilisi",
-            "to_station": "Batumi",
-            "date": "2026-07-15",
-            "seat_class": "Any",
-        }
-        with patch("bot.load_config", return_value=config), \
-             patch("bot.poller.is_running", return_value=True):
-            await bot.cmd_start(update, ctx)
-            update.message.reply_text.assert_called_once()
-            text = update.message.reply_text.call_args[0][0]
-            assert "Tbilisi" in text
-            assert "Monitoring active" in text
-
-    @pytest.mark.asyncio
-    async def test_start_without_config(self):
-        import bot
-        update = make_update(chat_id=12345)
-        ctx = make_context()
-
-        with patch("bot.load_config", return_value={}):
-            await bot.cmd_start(update, ctx)
-            text = update.message.reply_text.call_args[0][0]
-            assert "setroute" in text
-            assert "setdate" in text
-
-    @pytest.mark.asyncio
-    async def test_status_with_config_complete(self):
-        import bot
-        update = make_update(chat_id=12345)
-        ctx = make_context()
-
-        config = {
-            "from_station": "Tbilisi",
-            "to_station": "Batumi",
-            "date": "2026-07-15",
-            "seat_class": "Any",
-        }
-        with patch("bot.load_config", return_value=config), \
-             patch("bot.poller.is_running", return_value=False), \
-             patch("bot.is_config_complete", return_value=True):
-            await bot.cmd_status(update, ctx)
-            text = update.message.reply_text.call_args[0][0]
-            assert "Config complete but polling not started" in text
-
-    @pytest.mark.asyncio
-    async def test_status_no_config(self):
-        import bot
-        update = make_update(chat_id=12345)
-        ctx = make_context()
-
-        with patch("bot.load_config", return_value={}):
-            await bot.cmd_status(update, ctx)
-            text = update.message.reply_text.call_args[0][0]
-            assert "No configuration" in text
-
-    @pytest.mark.asyncio
-    async def test_stop_calls_poller_stop(self):
-        import bot
-        update = make_update(chat_id=12345)
-        ctx = make_context()
-
-        with patch("bot.poller.stop") as mock_stop:
+        with patch("bot.poller.stop") as mock_poller_stop, \
+             patch("bot.delete_config") as mock_delete_config:
             await bot.cmd_stop(update, ctx)
-            mock_stop.assert_called_once_with(12345)
+
+            mock_poller_stop.assert_called_once_with(12345)
+            mock_delete_config.assert_called_once_with(12345)
             update.message.reply_text.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_resume_calls_poller_resume(self):
+    async def test_stop_shows_stopped_message(self):
         import bot
         update = make_update(chat_id=12345)
         ctx = make_context()
 
-        with patch("bot.poller.resume", return_value=(True, "✅ OK")):
-            await bot.cmd_resume(update, ctx)
-            update.message.reply_text.assert_called_once()
+        with patch("bot.poller.stop"), \
+             patch("bot.delete_config"):
+            await bot.cmd_stop(update, ctx)
+
+            text = update.message.reply_text.call_args[0][0]
+            # Should contain the stop message from i18n
+            assert "stopped" in text.lower() or "остановлен" in text.lower()
+
+
+# ═══════════════════════ Fallback ═════════════════════════════════════
+
+
+class TestFallback:
 
     @pytest.mark.asyncio
     async def test_fallback_handler(self):
@@ -421,222 +664,13 @@ class TestCommandHandlers:
 
         await bot.fallback_handler(update, ctx)
         text = update.message.reply_text.call_args[0][0]
-        assert "don't understand" in text.lower()
+        assert "don't understand" in text.lower() or "не понимаю" in text
 
 
-# ═══════════════════════ Cancel Handler ════════════════════════════════
+# ═══════════════════════ Date Regex ════════════════════════════════════
 
 
-class TestCancelHandler:
-
-    @pytest.mark.asyncio
-    async def test_cancel_with_callback(self):
-        import bot
-        update = make_update(callback_data="cancel")
-        ctx = make_context()
-
-        result = await bot.cancel_handler(update, ctx)
-        assert result == bot.ConversationHandler.END
-        update.callback_query.edit_message_text.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_cancel_without_callback(self):
-        import bot
-        update = make_update()
-        update.callback_query = None
-        ctx = make_context()
-
-        result = await bot.cancel_handler(update, ctx)
-        assert result == bot.ConversationHandler.END
-        update.message.reply_text.assert_called_once()
-
-
-# ═══════════════════════ Conversation: From Station ════════════════════
-
-
-class TestFromStationHandler:
-
-    @pytest.mark.asyncio
-    async def test_cancel_from_station(self):
-        import bot
-        update = make_update(callback_data="cancel")
-        ctx = make_context()
-
-        result = await bot.from_station_handler(update, ctx)
-        assert result == bot.ConversationHandler.END
-
-    @pytest.mark.asyncio
-    async def test_pagination_from_station(self):
-        import bot
-        bot._stations = [
-            {"code": str(56000 + i), "stationName": f"Station{i}", "isPopular": True}
-            for i in range(20)
-        ]
-        bot._station_index = {s["code"]: s for s in bot._stations}
-
-        update = make_update(callback_data="page:from:1")
-        ctx = make_context()
-
-        result = await bot.from_station_handler(update, ctx)
-        assert result == bot.FROM_STATION
-        update.callback_query.edit_message_reply_markup.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_select_from_station(self):
-        import bot
-        bot._stations = [{"code": "56014", "stationName": "Tbilisi", "isPopular": True}]
-        bot._station_index = {"56014": bot._stations[0]}
-
-        update = make_update(callback_data="from:56014")
-        ctx = make_context()
-
-        result = await bot.from_station_handler(update, ctx)
-        assert result == bot.TO_STATION
-        assert ctx.user_data["from_code"] == "56014"
-        assert ctx.user_data["from_station"] == "Tbilisi"
-
-    @pytest.mark.asyncio
-    async def test_unknown_station(self):
-        import bot
-        bot._stations = [{"code": "56014", "stationName": "Tbilisi", "isPopular": True}]
-        bot._station_index = {"56014": bot._stations[0]}
-
-        update = make_update(callback_data="from:99999")
-        ctx = make_context()
-
-        result = await bot.from_station_handler(update, ctx)
-        assert result == bot.ConversationHandler.END
-
-
-# ═══════════════════════ Conversation: To Station ══════════════════════
-
-
-class TestToStationHandler:
-
-    @pytest.mark.asyncio
-    async def test_cancel_to_station(self):
-        import bot
-        update = make_update(callback_data="cancel")
-        ctx = make_context()
-
-        result = await bot.to_station_handler(update, ctx)
-        assert result == bot.ConversationHandler.END
-
-    @pytest.mark.asyncio
-    async def test_pagination_to_station(self):
-        import bot
-        bot._stations = [
-            {"code": str(56000 + i), "stationName": f"Station{i}", "isPopular": True}
-            for i in range(20)
-        ]
-        bot._station_index = {s["code"]: s for s in bot._stations}
-
-        update = make_update(callback_data="page:to:0")
-        ctx = make_context()
-
-        result = await bot.to_station_handler(update, ctx)
-        assert result == bot.TO_STATION
-
-    @pytest.mark.asyncio
-    async def test_select_to_station_success(self):
-        import bot
-        bot._stations = [
-            {"code": "56014", "stationName": "Tbilisi", "isPopular": True},
-            {"code": "57151", "stationName": "Batumi", "isPopular": True},
-        ]
-        bot._station_index = {s["code"]: s for s in bot._stations}
-
-        update = make_update(callback_data="to:57151", chat_id=12345)
-        ctx = make_context()
-        ctx.user_data["from_code"] = "56014"
-        ctx.user_data["from_station"] = "Tbilisi"
-
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save:
-            result = await bot.to_station_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            saved = mock_save.call_args[0][1]
-            assert saved["from_station"] == "Tbilisi"
-            assert saved["to_station"] == "Batumi"
-            assert saved["from_station_code"] == "56014"
-            assert saved["to_station_code"] == "57151"
-
-
-# ═══════════════════════ Conversation: Set Class ═══════════════════════
-
-
-class TestSetClass:
-
-    @pytest.mark.asyncio
-    async def test_cancel_class(self):
-        import bot
-        update = make_update(callback_data="cancel")
-        ctx = make_context()
-
-        result = await bot.setclass_handler(update, ctx)
-        assert result == bot.ConversationHandler.END
-
-    @pytest.mark.asyncio
-    async def test_select_any_class(self):
-        import bot
-        update = make_update(callback_data="class:Any", chat_id=12345)
-        ctx = make_context()
-
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
-             patch("bot.is_config_complete", return_value=False):
-            result = await bot.setclass_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            saved = mock_save.call_args[0][1]
-            assert saved["seat_class"] == "Any"
-
-    @pytest.mark.asyncio
-    async def test_select_business_starts_poller(self):
-        import bot
-        update = make_update(callback_data="class:Business", chat_id=12345)
-        ctx = make_context()
-
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config"), \
-             patch("bot.is_config_complete", return_value=True), \
-             patch("bot.poller.start") as mock_poller_start:
-            result = await bot.setclass_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            mock_poller_start.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_select_class_i(self):
-        import bot
-        update = make_update(callback_data="class:I", chat_id=12345)
-        ctx = make_context()
-
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
-             patch("bot.is_config_complete", return_value=False):
-            result = await bot.setclass_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            saved = mock_save.call_args[0][1]
-            assert saved["seat_class"] == "I"
-
-    @pytest.mark.asyncio
-    async def test_select_class_ii(self):
-        import bot
-        update = make_update(callback_data="class:II", chat_id=12345)
-        ctx = make_context()
-
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
-             patch("bot.is_config_complete", return_value=False):
-            result = await bot.setclass_handler(update, ctx)
-            assert result == bot.ConversationHandler.END
-            saved = mock_save.call_args[0][1]
-            assert saved["seat_class"] == "II"
-
-
-# ═══════════════════════ Bot URL Building ══════════════════════════════
-
-
-class TestBotUrlRegex:
+class TestDateRegex:
 
     def test_date_regex_valid(self):
         import bot
@@ -646,100 +680,27 @@ class TestBotUrlRegex:
 
     def test_date_regex_invalid(self):
         import bot
-        # DATE_RE only checks YYYY-MM-DD format, not valid calendar dates
-        assert bot.DATE_RE.match("2026-13-01") is not None  # matches format (month 13 — caught later)
+        assert bot.DATE_RE.match("2026-13-01") is not None  # format match, caught later
         assert bot.DATE_RE.match("not-a-date") is None
-        assert bot.DATE_RE.match("2026-1-1") is None  # no leading zeros
+        assert bot.DATE_RE.match("2026-1-1") is None
         assert bot.DATE_RE.match("") is None
 
 
-# ═══════════════════════ /lang Command ══════════════════════════════════
+# ═══════════════════════ Station Name Helper ═══════════════════════════
 
 
-class TestLangCommand:
+class TestStationNameForCode:
 
-    @pytest.mark.asyncio
-    async def test_lang_shows_current(self):
-        """/lang without args shows the current language."""
+    def test_known_station(self):
         import bot
-        update = make_update(chat_id=12345)
-        ctx = make_context()
-        ctx.args = []
+        bot._station_index = {"56014": {"code": "56014", "stationName": "Tbilisi"}}
 
-        with patch("i18n.get_user_language", return_value="en"):
-            await bot.cmd_lang(update, ctx)
-        text = update.message.reply_text.call_args[0][0]
-        assert "Language" in text
-        assert "en" in text
+        name = bot.station_name_for_code("56014")
+        assert name == "Tbilisi"
 
-    @pytest.mark.asyncio
-    async def test_lang_change_to_russian(self):
-        """/lang ru changes language to Russian and confirms in Russian."""
+    def test_unknown_station_returns_code(self):
         import bot
-        update = make_update(chat_id=12345)
-        ctx = make_context()
-        ctx.args = ["ru"]
+        bot._station_index = {"56014": {"code": "56014", "stationName": "Tbilisi"}}
 
-        with patch("i18n.get_user_language", return_value="en"), \
-             patch("config_manager.load_config", return_value={}), \
-             patch("config_manager.save_config") as mock_save, \
-             patch("i18n.clear_user_lang_cache"):
-            await bot.cmd_lang(update, ctx)
-        # Verify config was saved with new language
-        saved = mock_save.call_args[0][1]
-        assert saved["language"] == "ru"
-        # Confirmation sent in Russian
-        text = update.message.reply_text.call_args[0][0]
-        assert "Язык изменён" in text
-
-    @pytest.mark.asyncio
-    async def test_lang_change_to_english_from_russian(self):
-        """/lang en changes language to English when currently RU."""
-        import bot
-        update = make_update(chat_id=12345)
-        ctx = make_context()
-        ctx.args = ["en"]
-
-        with patch("i18n.get_user_language", return_value="ru"), \
-             patch("config_manager.load_config", return_value={"language": "ru"}), \
-             patch("config_manager.save_config") as mock_save, \
-             patch("i18n.clear_user_lang_cache"):
-            await bot.cmd_lang(update, ctx)
-        saved = mock_save.call_args[0][1]
-        assert saved["language"] == "en"
-        text = update.message.reply_text.call_args[0][0]
-        assert "Language changed" in text
-
-    @pytest.mark.asyncio
-    async def test_lang_invalid_code(self):
-        """/lang de returns an error message."""
-        import bot
-        update = make_update(chat_id=12345)
-        ctx = make_context()
-        ctx.args = ["de"]
-
-        with patch("i18n.get_user_language", return_value="en"), \
-             patch("config_manager.load_config"), \
-             patch("config_manager.save_config") as mock_save, \
-             patch("i18n.clear_user_lang_cache"):
-            await bot.cmd_lang(update, ctx)
-        text = update.message.reply_text.call_args[0][0]
-        assert "Invalid" in text or "invalid" in text
-        assert "de" in text
-        mock_save.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_lang_case_insensitive(self):
-        """/lang RU works (case-insensitive)."""
-        import bot
-        update = make_update(chat_id=12345)
-        ctx = make_context()
-        ctx.args = ["RU"]
-
-        with patch("i18n.get_user_language", return_value="en"), \
-             patch("config_manager.load_config", return_value={}), \
-             patch("config_manager.save_config") as mock_save, \
-             patch("i18n.clear_user_lang_cache"):
-            await bot.cmd_lang(update, ctx)
-        saved = mock_save.call_args[0][1]
-        assert saved["language"] == "ru"
+        name = bot.station_name_for_code("99999")
+        assert name == "99999"

@@ -49,11 +49,12 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Dictionaries/civil-stati
 
 **Known stations (17 codes found in codebase):**
 
-| Code   | Name                     |
-|--------|--------------------------|
-| 56014  | Tbilisi                  |
-| 57151  | Batumi                   |
-| 57450  | Kutaisi Airport          |
+|| Code   | Name                     | Notes                         |
+||--------|--------------------------|-------------------------------|
+|| 56014  | Tbilisi                  |                               |
+|| 57151  | Batumi                   |                               |
+|| 57530  | Kutaisi                  | city center; found via popular-routes, not in civil-stations dict |
+|| 57450  | Kutaisi Airport          |                               |
 | 57290  | Zugdidi                  |
 | 57120  | Kobuleti                 |
 | 57100  | Ozurgeti                 |
