@@ -1,15 +1,8 @@
 {
   "start": {
     "welcome": "👋 *Tre.ge Ticket Monitor*",
-    "description": "I check train ticket availability on Georgian Railway and notify you.",
-    "no_config": "Use the commands below to set up monitoring:",
-    "cmd_setroute": "/setroute — pick departure & arrival stations",
-    "cmd_setdate": "/setdate — set travel date",
-    "cmd_setclass": "/setclass — pick seat class",
-    "cmd_status": "/status — show current config & polling",
-    "cmd_stop": "/stop — stop monitoring",
-    "cmd_resume": "/resume — resume monitoring (if route is configured)",
-    "cmd_lang": "/lang [en|ru] — show or change language",
+    "description": "I'll help you set up ticket monitoring in a few quick steps.",
+    "config_active": "📋 *Current monitoring:*\n🚉 {from_name} → {to_name}\n📅 {date}\n💺 Class: {class_name}\n\n✅ *Monitoring active* — checking every 60 s\nUse /stop to cancel.",
     "current_config": "*Current config:*",
     "route_line": "🚉 {from_name} → {to_name}",
     "date_line": "📅 {date}",
@@ -20,59 +13,41 @@
     "start_with_setroute": "Start with /setroute"
   },
 
-  "status": {
-    "title": "*📊 Status*",
-    "route": "*Route:* {from_name} → {to_name}",
-    "date": "*Date:* {date}",
-    "class": "*Class:* {class_name}",
-    "monitoring_active": "✅ *Monitoring active* — checking every 60 s",
-    "config_complete_not_started": "⏸ *Config complete but polling not started*",
-    "config_complete_hint": "   Start with /setdate or re-send /setroute",
-    "config_incomplete": "⚠️ *Config incomplete* — use /setroute, /setdate, /setclass",
-    "no_config": "No configuration yet.",
-    "start_with_setroute": "Start with /setroute",
-    "start_search_button": "🚀 Start search",
-    "active_monitors": "👥 Active monitors: {count}"
+  "wizard": {
+    "date_select": "📅 *Select travel date:*",
+    "date_today_btn": "📅 Today",
+    "date_tomorrow_btn": "📅 Tomorrow",
+    "date_custom_btn": "✏️ Custom date...",
+    "date_custom_prompt": "📅 *Enter travel date*\n\nFormat: `YYYY-MM-DD`\nExample: `2026-07-15`",
+    "date_invalid": "❌ Invalid date. Use format `YYYY-MM-DD`.",
+    "date_past": "❌ Date is in the past. Try again.",
+    "date_set": "✅ Date set to *{date}*",
+    "date_today_set": "✅ Date set to *today* ({date})",
+    "date_tomorrow_set": "✅ Date set to *tomorrow* ({date})",
+    "select_departure": "🚉 *Select departure station:*",
+    "select_arrival": "🚉 *Select arrival station:*",
+    "from_selected": "🚉 *From:* {station_name}\n\nNow select *arrival station:*",
+    "station_tbilisi_btn": "🏛 Tbilisi",
+    "station_batumi_btn": "🏖 Batumi",
+    "station_all_btn": "📋 All stations...",
+    "station_not_found": "❌ Station not found. Try again.",
+    "station_same": "⚠️ Departure and arrival must be different.",
+    "route_saved": "✅ *Route saved:* {from_name} → {to_name}",
+    "select_class": "💺 *Select seat class:*",
+    "class_any_btn": "✨ Any",
+    "class_business_btn": "💼 Business",
+    "class_i_btn": "🥇 Class I",
+    "class_ii_btn": "🥈 Class II",
+    "class_set": "✅ Seat class set to *{class_name}*",
+    "cancelled": "🚫 Cancelled.",
+    "monitoring_started": "✅ *All set! Monitoring started* — checking every 60 s 🚀\n\nI'll notify you when tickets are available. Use /stop to cancel anytime.",
+    "stop_confirm": "🛑 *Stop monitoring?*\n\nThis will clear your configuration and stop checking for tickets.",
+    "stop_confirm_btn": "🛑 Yes, stop",
+    "stop_cancel_btn": "↩️ No, keep monitoring"
   },
 
   "stop": {
-    "stopped": "🛑 Monitoring stopped. Your configuration is preserved.",
-    "stopped_with_button": "🛑 Monitoring stopped. Your configuration is preserved.",
-    "start_search_button": "🔍 Start search"
-  },
-
-  "route": {
-    "select_from": "🚉 *Select departure station:*",
-    "cancelled": "🚫 Cancelled.",
-    "station_not_found": "❌ Station not found. Try again.",
-    "from_selected": "🚉 *From:* {station_name}\n\nNow select *arrival station:*",
-    "same_station": "⚠️ Departure and arrival must be different. Try again.",
-    "saved": "✅ *Route saved:* {from_name} → {to_name}\n\nNext steps:\n  /setdate — set travel date\n  /setclass — choose seat class",
-    "monitoring_started": "✅ Monitoring started — checking every 60 s!",
-    "incomplete_hint": "Make sure to also set:\n  /setdate — travel date\n  /setclass — seat class"
-  },
-
-  "date": {
-    "prompt": "📅 *Enter travel date*\n\nFormat: `YYYY-MM-DD`\nExamples: `2026-07-15`, `today`, `tomorrow`, `+3` (days from now)",
-    "invalid_format": "❌ Invalid format. Use `+3` or `YYYY-MM-DD`.",
-    "past_date": "❌ Date is in the past. Try again.",
-    "invalid_date": "❌ Invalid date. Use format `YYYY-MM-DD`.",
-    "unrecognised": "❌ I don't understand. Use `YYYY-MM-DD`, `today`, or `tomorrow`.",
-    "set": "✅ Date set to *{date}*",
-    "monitoring_started": "✅ Monitoring started — checking every 60 s!",
-    "incomplete_hint": "Make sure to also set:\n  /setroute — route\n  /setclass — seat class"
-  },
-
-  "class": {
-    "select": "💺 *Select seat class:*",
-    "cancelled": "🚫 Cancelled.",
-    "set": "✅ Seat class set to *{class_name}*",
-    "monitoring_started": "✅ Monitoring started — checking every 60 s!",
-    "incomplete_hint": "Make sure to also set:\n  /setroute — route\n  /setdate — travel date"
-  },
-
-  "fallback": {
-    "unrecognised": "I don't understand that command.\nTry /start to see available commands."
+    "stopped": "🛑 Monitoring stopped and configuration cleared.\nUse /start to set up again."
   },
 
   "poller": {
@@ -81,10 +56,7 @@
     "ride": "🚆 *Ride #{ride_num}*  {departure} → {arrival} ({duration})",
     "purchase_link": "🔗 [Purchase]({url})",
     "class_info": "{class_name}: {seats} seats · {price} GEL",
-    "class_info_ru": "{class_name}: {seats} мест · {price} GEL",
-    "not_configured": "❌ Route not configured. Use /setroute first.",
-    "resumed": "✅ Monitoring resumed!",
-    "already_active": "✅ Monitoring is already active."
+    "class_info_ru": "{class_name}: {seats} seats · {price} GEL"
   },
 
   "button": {
@@ -98,11 +70,7 @@
     "other": "{count} seats"
   },
 
-  "lang": {
-    "current": "🌐 *Language:* English (`en`)",
-    "current_with_keyboard": "🌐 *Current language:* {lang_name}\n\nSelect language:",
-    "changed": "✅ Language changed to English (`en`)",
-    "invalid": "❌ Invalid language code `{code}`.\\nAvailable: en (English), ru (Русский)",
-    "cmd_hint": "/lang [en|ru] — show or change language"
+  "fallback": {
+    "unrecognised": "I don't understand that command.\nStart with /start to begin setup."
   }
 }
