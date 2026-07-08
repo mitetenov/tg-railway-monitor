@@ -24,27 +24,20 @@ MONITOR_INTERVAL = 60  # seconds between checks
 # Global registry of running poller tasks: chat_id -> asyncio.Task
 _running_tasks: Dict[int, asyncio.Task] = {}
 
-# Track already-notified ride+class combos so we don't spam
-_notified: Dict[int, set] = {}
-
-# Anti-spam expiry: after this many poll cycles the notified history for a
-# chat is cleared.  Default 60 × 60 s = 1 hour.  This prevents unbounded
-# memory growth in long-running bots while still deduplicating within a
-# reasonable window.
-_NOTIFIED_TTL_CYCLES = 60
+# Store previous seat counts per chat for stateful diffing.
+# Structure: {chat_id: {ride_number_str: {seat_class_id_str: {"seats": N, "price": M}}}}
+_state: Dict[int, dict] = {}
 
 # Pause state per chat — when True the loop stays alive but skips checks
 _paused: Dict[int, bool] = {}
 
 
-def _notified_key(ride_number: int, class_name: str) -> str:
-    return f"{ride_number}:{class_name}"
-
-
 async def _check_and_notify(bot: Bot, chat_id: int) -> None:
-    """Single check → notify if new tickets found.
+    """Single check → notify if tickets appeared or seat count increased.
 
-    Groups all newly-found seat classes for the same ride into one message.
+    Groups all changed seat classes for the same ride into one message.
+    Uses stateful diffing: only notifies on newly-available or
+    increased-seat-count tickets, never re-notifies unchanged tickets.
     """
     config = load_config(chat_id)
     if not config:
@@ -68,41 +61,53 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
     if not rides:
         return
 
-    # ── Collect newly-found classes per ride ────────────────────────
+    _CLASS_FILTER_MAP = {"I": 1, "II": 2, "Business": 5}
+
+    # ── Collect changed classes per ride ────────────────────────────
     # ride_number -> (ride_dict, [(cls_name, seats, price), ...])
-    rides_with_new: dict = {}
+    rides_with_changes: dict = {}
+
+    chat_state = _state.setdefault(chat_id, {})
 
     for ride in rides:
         ride_num = ride.get("rideNumber")
         if ride_num is None:
             continue
 
-        new_classes = []
+        changed_classes = []
         classes_raw = ride.get("availableSeatsClasses", [])
+        ride_state = chat_state.get(str(ride_num), {})
+
         for cls in classes_raw:
-            cls_name = CLASS_NAMES.get(cls.get("seatClassId"), "")
+            cls_id = cls.get("seatClassId")
+            cls_name = CLASS_NAMES.get(cls_id, "")
             seats = cls.get("availableNumberOfSeats") or 0
             price = cls.get("moneyAmount", "?")
 
             # Apply class filter
             if seat_class != "Any":
-                # Map user-facing class names to numeric IDs for exact matching
-                _CLASS_FILTER_MAP = {"I": 1, "II": 2, "Business": 5}
-                target_id = _CLASS_FILTER_MAP.get(seat_class, None)
-                cls_id = cls.get("seatClassId")
+                target_id = _CLASS_FILTER_MAP.get(seat_class)
                 if target_id is not None and cls_id != target_id:
                     continue
 
-            if seats is not None and seats > 0:
-                key = _notified_key(ride_num, cls_name)
-                if key not in _notified.setdefault(chat_id, set()):
-                    new_classes.append((cls_name, seats, price))
-                    _notified[chat_id].add(key)
+            # Stateful diff: only notify on newly-available or increased seats
+            prev_entry = ride_state.get(str(cls_id))
+            prev_seats = prev_entry["seats"] if prev_entry else 0
 
-        if new_classes:
-            rides_with_new[ride_num] = (ride, new_classes)
+            if seats > 0:
+                should_notify = prev_entry is None or seats > prev_seats
+                if should_notify:
+                    changed_classes.append((cls_name, seats, price))
 
-    if not rides_with_new:
+            # Always persist current state
+            ride_state[str(cls_id)] = {"seats": seats, "price": price}
+
+        chat_state[str(ride_num)] = ride_state
+
+        if changed_classes:
+            rides_with_changes[ride_num] = (ride, changed_classes)
+
+    if not rides_with_changes:
         return
 
     # ── Build one grouped notification per ride ─────────────────────
@@ -111,7 +116,7 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         f"📅 {date}",
         "",
     ]
-    for ride_num, (ride, class_list) in list(rides_with_new.items())[:5]:
+    for ride_num, (ride, class_list) in rides_with_changes.items():
         dep = format_time(ride.get("rideStartDate") or "")
         arr = format_time(ride.get("rideEndDate") or "")
         dur = ride.get("rideDuration", "?")
@@ -150,19 +155,12 @@ async def _poller_loop(bot: Bot, chat_id: int) -> None:
     API check and notification.
     """
     logger.info("Started polling for chat %d", chat_id)
-    cycle = 0
     try:
         while True:
             if not _paused.get(chat_id, False):
                 await _check_and_notify(bot, chat_id)
             else:
                 logger.debug("Polling paused for chat %d", chat_id)
-
-            cycle += 1
-            if cycle >= _NOTIFIED_TTL_CYCLES:
-                _notified.pop(chat_id, None)
-                cycle = 0
-
             await asyncio.sleep(MONITOR_INTERVAL)
     except asyncio.CancelledError:
         logger.info("Polling cancelled for chat %d", chat_id)
@@ -190,7 +188,7 @@ def stop(chat_id: int) -> None:
     if task and not task.done():
         task.cancel()
         logger.info("Poller stopped for chat %d", chat_id)
-    _notified.pop(chat_id, None)
+    _state.pop(chat_id, None)
     _paused.pop(chat_id, None)
 
 
