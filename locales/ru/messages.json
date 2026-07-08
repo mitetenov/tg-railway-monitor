@@ -97,6 +97,7 @@
 
   "lang": {
     "current": "🌐 *Язык:* Русский (`ru`)",
+    "current_with_keyboard": "🌐 *Текущий язык:* {lang_name}\n\nВыберите язык:",
     "changed": "✅ Язык изменён на Русский (`ru`)",
     "invalid": "❌ Неверный код языка `{code}`.\\nДоступно: en (English), ru (Русский)",
     "cmd_hint": "/lang [en|ru] — показать или сменить язык"

@@ -669,8 +669,8 @@ class TestLangCommand:
         with patch("i18n.get_user_language", return_value="en"):
             await bot.cmd_lang(update, ctx)
         text = update.message.reply_text.call_args[0][0]
-        assert "Language" in text
-        assert "en" in text
+        assert "Current language" in text
+        assert "English" in text
 
     @pytest.mark.asyncio
     async def test_lang_change_to_russian(self):
