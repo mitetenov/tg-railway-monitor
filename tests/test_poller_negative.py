@@ -10,6 +10,7 @@ import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from telegram.error import TelegramError
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -110,11 +111,11 @@ class TestPauseResumeNegative:
             json.dump(cfg, f)
 
         try:
-            # No bot, but resume will fail on start() because no event loop
-            success, msg = resume(None, 70002)
-            # It should succeed the route check but may fail on start
-            # The important thing: it doesn't crash prematurely
-            assert isinstance(success, bool)
+            # resume will attempt start() which needs an event loop;
+            # in a sync test context this raises RuntimeError
+            import pytest
+            with pytest.raises(RuntimeError):
+                resume(None, 70002)
         finally:
             stop(70002)
             os.remove(os.path.join(data_dir, "70002.json"))
@@ -332,6 +333,7 @@ class TestCheckAndNotifyNegative:
         chat_id = 81006
         self._write_config(chat_id, {"seat_class": "Business"})
         mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
         _state.pop(chat_id, None)
 
         data = {
@@ -366,6 +368,7 @@ class TestCheckAndNotifyNegative:
         chat_id = 81007
         self._write_config(chat_id, {"seat_class": "I"})
         mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
         _state.pop(chat_id, None)
 
         data = {
@@ -413,6 +416,7 @@ class TestCheckAndNotifyNegative:
         chat_id = 81009
         self._write_config(chat_id)
         mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
         _state.pop(chat_id, None)
 
         data = {
@@ -466,7 +470,7 @@ class TestCheckAndNotifyNegative:
         }
 
         mock_bot = MagicMock()
-        mock_bot.send_message.side_effect = Exception("Blocked by user")
+        mock_bot.send_message = AsyncMock(side_effect=TelegramError("Blocked by user"))
 
         with patch("poller.get_available_rides", AsyncMock(return_value=data)):
             # Should not raise
@@ -480,6 +484,7 @@ class TestCheckAndNotifyNegative:
         chat_id = 81011
         self._write_config(chat_id)
         mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
         _state.pop(chat_id, None)
 
         data = {
@@ -514,5 +519,109 @@ class TestCheckAndNotifyNegative:
             text = mock_bot.send_message.call_args[1]["text"]
             assert "Ride #800" in text
             assert "Ride #900" in text
+
+        self._cleanup_config(chat_id)
+
+    @pytest.mark.asyncio
+    async def test_notification_includes_all_rides_not_just_changed(self):
+        """When one ride changes, notification includes ALL available rides."""
+        chat_id = 81012
+        self._write_config(chat_id)
+        mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
+
+        # Reset state for this chat
+        _state.pop(chat_id, None)
+
+        # Seed state: ride #800 already known with 5 seats
+        _state[chat_id] = {
+            "800": {"1": {"seats": 5, "price": 76}},
+        }
+
+        # API returns: ride #800 unchanged + ride #900 (new)
+        data = {
+            "isAnyDepartureTripAvailable": True,
+            "departureAvailableRides": [
+                {
+                    "rideNumber": 800,
+                    "rideStartDate": "2026-06-27T08:00:00Z",
+                    "rideEndDate": "2026-06-27T13:00:00Z",
+                    "rideDuration": "05:00:00",
+                    "availableSeatsClasses": [
+                        {"seatClassId": 1, "availableNumberOfSeats": 5, "moneyAmount": 76},
+                    ],
+                },
+                {
+                    "rideNumber": 900,
+                    "rideStartDate": "2026-06-27T18:00:00Z",
+                    "rideEndDate": "2026-06-27T23:00:00Z",
+                    "rideDuration": "05:00:00",
+                    "availableSeatsClasses": [
+                        {"seatClassId": 5, "availableNumberOfSeats": 2, "moneyAmount": 126},
+                    ],
+                },
+            ],
+            "returningAvailableRides": [],
+        }
+
+        with patch("poller.get_available_rides", AsyncMock(return_value=data)):
+            await _check_and_notify(mock_bot, chat_id)
+
+        # Both rides should appear in notification
+        mock_bot.send_message.assert_called_once()
+        text = mock_bot.send_message.call_args[1]["text"]
+        assert "Ride #800" in text, "Unchanged ride should still be in notification"
+        assert "Ride #900" in text, "New ride should be in notification"
+
+        # Verify state tracks both rides
+        assert str(900) in _state.get(chat_id, {}), "State should track ride 900"
+
+        self._cleanup_config(chat_id)
+
+    @pytest.mark.asyncio
+    async def test_no_notification_when_nothing_changes(self):
+        """When API returns exact same data as state → no notification at all."""
+        chat_id = 81013
+        self._write_config(chat_id)
+        mock_bot = MagicMock()
+        mock_bot.send_message = AsyncMock()
+        _state.pop(chat_id, None)
+
+        # Seed state: 2 rides already known
+        _state[chat_id] = {
+            "800": {"1": {"seats": 5, "price": 76}},
+            "900": {"5": {"seats": 2, "price": 126}},
+        }
+
+        # API returns exactly the same data
+        data = {
+            "isAnyDepartureTripAvailable": True,
+            "departureAvailableRides": [
+                {
+                    "rideNumber": 800,
+                    "rideStartDate": "2026-06-27T08:00:00Z",
+                    "rideEndDate": "2026-06-27T13:00:00Z",
+                    "rideDuration": "05:00:00",
+                    "availableSeatsClasses": [
+                        {"seatClassId": 1, "availableNumberOfSeats": 5, "moneyAmount": 76},
+                    ],
+                },
+                {
+                    "rideNumber": 900,
+                    "rideStartDate": "2026-06-27T18:00:00Z",
+                    "rideEndDate": "2026-06-27T23:00:00Z",
+                    "rideDuration": "05:00:00",
+                    "availableSeatsClasses": [
+                        {"seatClassId": 5, "availableNumberOfSeats": 2, "moneyAmount": 126},
+                    ],
+                },
+            ],
+            "returningAvailableRides": [],
+        }
+
+        with patch("poller.get_available_rides", AsyncMock(return_value=data)):
+            await _check_and_notify(mock_bot, chat_id)
+
+        mock_bot.send_message.assert_not_called()
 
         self._cleanup_config(chat_id)
