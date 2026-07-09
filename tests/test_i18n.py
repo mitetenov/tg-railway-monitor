@@ -340,6 +340,36 @@ class TestTranslateStationName:
         result = translate_station_name(-1, "en")
         assert result == "-1"
 
+    # ── Fallback parameter ────────────────────────────────────────
+
+    def test_en_unknown_with_fallback_string(self):
+        """When fallback is provided and no hardcoded name, use fallback."""
+        result = translate_station_name(99999, "en", fallback="Custom Station")
+        assert result == "Custom Station"
+
+    def test_ru_unknown_with_fallback_string(self):
+        """Russian: fallback is used when neither RU nor EN mapping exists."""
+        result = translate_station_name(99999, "ru", fallback="Custom Station")
+        assert result == "Custom Station"
+
+    def test_ka_unknown_with_fallback_string(self):
+        """Georgian: fallback is used when neither KA nor EN mapping exists."""
+        result = translate_station_name(99999, "ka", fallback="Custom Station")
+        assert result == "Custom Station"
+
+    def test_known_station_ignores_fallback(self):
+        """Hardcoded translation always takes priority over fallback."""
+        result = translate_station_name(56014, "en", fallback="Should Not Use")
+        assert result == "Tbilisi"
+
+    def test_ru_known_falls_back_to_en_not_fallback(self):
+        """RU mapping missing → should fall back to EN, not fallback param."""
+        # 56014 is in STATION_NAMES_RU, so this tests another scenario:
+        # a code in EN mapping but NOT in RU mapping is unusual, but let's
+        # test that the EN name is preferred over the fallback string.
+        result = translate_station_name(56014, "ru", fallback="Fallback")
+        assert result == "Тбилиси"
+
     # ── Russian ────────────────────────────────────────────────────
 
     def test_ru_known_station(self):
@@ -510,6 +540,39 @@ class TestTranslateStationName:
 
     def test_idempotent_ka(self):
         assert translate_station_name(57450, "ka") == translate_station_name(57450, "ka")
+
+    # ── Comprehensive fallback for all known stations ────────────────
+
+    def test_all_known_codes_return_names_not_numbers(self):
+        """When fallback is provided, no known code should ever return a bare number."""
+        from stations import _STATION_DATA  # noqa: PLC0415
+
+        for code_str, name, *_ in _STATION_DATA:
+            if not code_str:
+                continue
+            code = int(code_str)
+            result = translate_station_name(code, "en", fallback=name)
+            assert not result.isdigit(), (
+                f"Code {code} returned numeric '{result}' instead of '{name}'"
+            )
+            assert result == name, (
+                f"Code {code} expected '{name}', got '{result}'"
+            )
+
+    def test_unknown_code_with_api_name_fallback(self):
+        """Unknown code with API stationName returns the API name, not the code."""
+        # Code 99999 is not in STATION_NAMES
+        result = translate_station_name(99999, "en", fallback="Station From API")
+        assert result == "Station From API"
+        assert result != "99999"
+
+    def test_unknown_code_with_api_name_fallback_all_langs(self):
+        """Unknown code with API fallback works in all supported languages."""
+        for lang in ("en", "ru", "ka"):
+            result = translate_station_name(99999, lang, fallback="API Station")
+            assert result == "API Station", (
+                f"Lang '{lang}' returned '{result}' instead of 'API Station'"
+            )
 
     # ── Parametrized codes ────────────────────────────────────────
 
