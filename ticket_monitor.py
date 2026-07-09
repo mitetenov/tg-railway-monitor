@@ -58,9 +58,11 @@ class RouteConfig:
 
     def __post_init__(self):
         if not self.from_station_name:
-            self.from_station_name = STATION_NAMES.get(self.from_station_code, self.from_station_code)
+            if self.from_station_code:
+                self.from_station_name = STATION_NAMES.get(int(self.from_station_code), self.from_station_code)
         if not self.to_station_name:
-            self.to_station_name = STATION_NAMES.get(self.to_station_code, self.to_station_code)
+            if self.to_station_code:
+                self.to_station_name = STATION_NAMES.get(int(self.to_station_code), self.to_station_code)
         if not self.date:
             self.date = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
 
