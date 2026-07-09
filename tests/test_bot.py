@@ -169,8 +169,31 @@ class TestStationKeyboard:
         texts = [btn.text for row in keyboard for btn in row]
         assert "Tbilisi" not in texts
         assert "Batumi" not in texts
-        assert "99999" not in texts  # Now shows stationName "TestStation" via fallback
-        assert "TestStation" in texts
+        assert "TestStation" in texts  # API stationName used as fallback for unknown code
+
+    def test_no_numeric_codes_in_keyboard(self):
+        """Station keyboard buttons should never display raw numeric codes."""
+        import bot
+        # Mix of known and unknown codes
+        bot._stations = [
+            {"code": "56014", "stationName": "Tbilisi", "isPopular": True},
+            {"code": "99999", "stationName": "Custom Station", "isPopular": False},
+            {"code": "88888", "stationName": "Another Place", "isPopular": False},
+        ]
+        bot._station_index = {s["code"]: s for s in bot._stations}
+
+        markup = bot.build_station_keyboard("wiz_from", 0)
+        keyboard = markup.inline_keyboard
+        for row in keyboard:
+            for btn in row:
+                # Skip nav/cancel buttons
+                if btn.callback_data in ("noop", "cancel") or btn.callback_data and btn.callback_data.startswith("page:"):
+                    continue
+                # Station buttons should show names, not numeric codes
+                assert not btn.text.isdigit(), (
+                    f"Button '{btn.text}' appears to be a numeric code — "
+                    f"should be a station name"
+                )
 
 
 # ═══════════════════════ Date Keyboard ═════════════════════════════════
@@ -220,6 +243,39 @@ class TestQuickStationKeyboard:
         assert keyboard[0][1].callback_data == "wiz_from:57151"
         assert keyboard[1][0].callback_data == "wiz_from:all"
         assert keyboard[2][0].callback_data == "cancel"
+
+    def test_quick_station_keyboard_uses_api_fallback(self):
+        """build_quick_station_keyboard passes API stationName as fallback."""
+        import bot
+        # Set up station_index with API names
+        bot._stations = [
+            {"code": "56014", "stationName": "Tbilisi Central", "isPopular": True},
+            {"code": "57151", "stationName": "Batumi Seaside", "isPopular": True},
+        ]
+        bot._station_index = {s["code"]: s for s in bot._stations}
+
+        # Quick-pick codes ARE in STATION_NAMES, so fallback is ignored
+        # But the call still demonstrates fallback passthrough
+        t = MagicMock()
+        t.lang = "en"
+        t.side_effect = lambda key: {
+            "wizard.station_tbilisi_btn": "🏛 Tbilisi",
+            "wizard.station_batumi_btn": "🏖 Batumi",
+            "wizard.station_all_btn": "📋 All stations...",
+            "button.cancel": "🚫 Cancel",
+        }.get(key, key)
+
+        with patch("bot.translate_station_name", wraps=bot.translate_station_name) as mock_tsn:
+            bot.build_quick_station_keyboard("wiz_from", t)
+            # Verify called twice, each with fallback from _station_index
+            calls = mock_tsn.call_args_list
+            assert len(calls) >= 2
+            # First call: Tbilisi with fallback
+            assert calls[0][0] == (56014, "en")
+            assert calls[0][1]["fallback"] == "Tbilisi Central"
+            # Second call: Batumi with fallback
+            assert calls[1][0] == (57151, "en")
+            assert calls[1][1]["fallback"] == "Batumi Seaside"
 
 
 # ═══════════════════════ Class Keyboard ════════════════════════════════
@@ -706,3 +762,41 @@ class TestStationNameForCode:
 
         name = bot.station_name_for_code("99999")
         assert name == "99999"
+
+    def test_unknown_station_with_fallback(self):
+        """When API stationName is provided, it is used as fallback."""
+        import bot
+        bot._station_index = {"56014": {"code": "56014", "stationName": "Tbilisi"}}
+
+        name = bot.station_name_for_code("99999", station_name="Custom Station")
+        assert name == "Custom Station"
+
+    def test_known_station_ignores_fallback(self):
+        """Hardcoded translation takes priority over API name."""
+        import bot
+        bot._station_index = {"56014": {"code": "56014", "stationName": "Tbilisi"}}
+
+        name = bot.station_name_for_code("56014", station_name="Should Not Use")
+        assert name == "Tbilisi"
+
+    def test_all_fallback_stations_return_names(self):
+        """Every station from FALLBACK_STATIONS returns a name, never a numeric code."""
+        import bot
+        from stations import FALLBACK_STATIONS
+
+        bot._stations = FALLBACK_STATIONS
+        bot._station_index = {}
+        for s in bot._stations:
+            code = str(s.get("code", ""))
+            if code:
+                bot._station_index[code] = s
+
+        for s in FALLBACK_STATIONS:
+            code = s.get("code", "")
+            station_name = s.get("stationName", "")
+            if code:
+                result = bot.station_name_for_code(str(code), station_name=station_name)
+                assert not result.isdigit(), (
+                    f"Code {code} returned numeric '{result}' instead of a name"
+                )
+                assert result, f"Code {code} returned empty string"

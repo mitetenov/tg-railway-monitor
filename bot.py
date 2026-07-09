@@ -70,11 +70,13 @@ async def load_stations() -> None:
     logger.info("Loaded %d stations", len(_stations))
 
 
-def station_name_for_code(code: str, lang: str = "en") -> str:
-    """Return the translated display name for a station code, or the code itself."""
-    station = _station_index.get(code, {})
-    fallback = station.get("stationName", code)
-    return translate_station_name(int(code), lang, fallback=fallback)
+def station_name_for_code(code: str, lang: str = "en", station_name: Optional[str] = None) -> str:
+    """Return the translated display name for a station code, or the code itself.
+
+    When *station_name* (the API's ``stationName``) is provided, it is used
+    as a fallback when no hardcoded translation exists for the code.
+    """
+    return translate_station_name(int(code), lang, fallback=station_name)
 
 
 # ── Paginated keyboard (all stations, excluding quick-picks) ─────────
@@ -113,7 +115,7 @@ def build_station_keyboard(action: str, page: int = 0, t=None) -> InlineKeyboard
     keyboard = []
     for s in filtered[start:end]:
         code = str(s.get("code", ""))
-        name = translate_station_name(int(code), lang, fallback=s.get("stationName", "?")) if code else s.get("stationName", "?")
+        name = translate_station_name(int(code), lang, fallback=s.get("stationName")) if code else s.get("stationName", "?")
         keyboard.append([InlineKeyboardButton(name, callback_data=f"{action}:{code}")])
 
     nav = pagination_buttons(page, total_pages, action, t)
@@ -141,10 +143,10 @@ def build_date_keyboard(t) -> InlineKeyboardMarkup:
 def build_quick_station_keyboard(action: str, t) -> InlineKeyboardMarkup:
     """Inline keyboard with Tbilisi / Batumi quick-picks + 'All stations'."""
     lang = t.lang
-    tbilisi_station = _station_index.get(TBILISI_CODE, {})
-    tbilisi_name = translate_station_name(int(TBILISI_CODE), lang, fallback=tbilisi_station.get("stationName", ""))
-    batumi_station = _station_index.get(BATUMI_CODE, {})
-    batumi_name = translate_station_name(int(BATUMI_CODE), lang, fallback=batumi_station.get("stationName", ""))
+    tbilisi_fallback = _station_index.get(TBILISI_CODE, {}).get("stationName")
+    batumi_fallback = _station_index.get(BATUMI_CODE, {}).get("stationName")
+    tbilisi_name = translate_station_name(int(TBILISI_CODE), lang, fallback=tbilisi_fallback)
+    batumi_name = translate_station_name(int(BATUMI_CODE), lang, fallback=batumi_fallback)
     keyboard = [
         [
             InlineKeyboardButton(tbilisi_name, callback_data=f"{action}:{TBILISI_CODE}"),
@@ -335,12 +337,12 @@ async def _show_arrival(update: Update, context,
     """Show arrival station selection."""
     chat_id = update.effective_chat.id
     t = get_user_translation(chat_id, update.effective_user)
-    # Translate the station name for display
+    # Translate the station name for display, falling back to the API name
     code_int = int(from_code) if from_code else 0
     name = translate_station_name(
         code_int,
         t.lang,
-        fallback=from_name,
+        fallback=from_name or None,
     )
     text = t("wizard.from_selected", station_name=name)
     reply_markup = build_quick_station_keyboard("wiz_to", t)
@@ -411,10 +413,16 @@ async def wizard_arrival_handler(update: Update, context) -> int:
         save_config(chat_id, config)
 
         # Confirm route and proceed to class selection — translate for display
-        from_name = translate_station_name(int(context.user_data.get("from_code", 0)), t.lang,
-                                           fallback=context.user_data.get("from_station", ""))
-        to_name = translate_station_name(int(code), t.lang,
-                                         fallback=context.user_data.get("to_station", ""))
+        from_name = translate_station_name(
+            int(context.user_data.get("from_code", 0)),
+            t.lang,
+            fallback=context.user_data.get("from_station"),
+        )
+        to_name = translate_station_name(
+            int(code),
+            t.lang,
+            fallback=station.get("stationName"),
+        )
         await query.edit_message_text(
             t("wizard.route_saved", from_name=from_name, to_name=to_name),
             parse_mode="Markdown",
