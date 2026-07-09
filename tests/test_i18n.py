@@ -299,84 +299,192 @@ class TestRealLocaleFiles:
 
 
 class TestTranslateStationName:
-    """Tests for translate_station_name()."""
+    """Tests for translate_station_name(code, lang) — int-code-based."""
 
     # ── English ────────────────────────────────────────────────────
 
-    def test_en_returns_station_key(self):
-        """English should return the station key as-is."""
-        result = translate_station_name("Tbilisi", "en")
+    def test_en_known_station(self):
+        """English should return the canonical name for a known code."""
+        result = translate_station_name(56014, "en")
         assert result == "Tbilisi"
 
-    def test_en_does_not_import_russian(self):
-        """English path should be fast — no dict lookup."""
-        result = translate_station_name("Mtskheta", "en")
-        assert result == "Mtskheta"
+    def test_en_batumi(self):
+        result = translate_station_name(57151, "en")
+        assert result == "Batumi"
+
+    def test_en_airport(self):
+        result = translate_station_name(57450, "en")
+        assert result == "Kutaisi Airport"
+
+    def test_en_kutaisi_city(self):
+        """Kutaisi city center (57530) should be in English."""
+        result = translate_station_name(57530, "en")
+        assert result == "Kutaisi"
+
+    def test_en_zugdidi(self):
+        result = translate_station_name(57290, "en")
+        assert result == "Zugdidi"
+
+    def test_en_kobuleti(self):
+        result = translate_station_name(57120, "en")
+        assert result == "Kobuleti"
+
+    def test_en_unknown_code_fallback(self):
+        """Unknown code falls back to string representation."""
+        result = translate_station_name(99999, "en")
+        assert result == "99999"
+
+    def test_en_negative_code_fallback(self):
+        """Negative codes fall back gracefully."""
+        result = translate_station_name(-1, "en")
+        assert result == "-1"
 
     # ── Russian ────────────────────────────────────────────────────
 
     def test_ru_known_station(self):
         """Known station should return the Russian name."""
-        result = translate_station_name("Tbilisi", "ru")
+        result = translate_station_name(56014, "ru")
         assert result == "Тбилиси"
 
+    def test_ru_batumi(self):
+        result = translate_station_name(57151, "ru")
+        assert result == "Батуми"
+
     def test_ru_airport(self):
-        result = translate_station_name("Kutaisi Airport", "ru")
+        result = translate_station_name(57450, "ru")
         assert result == "Аэропорт Кутаиси"
 
-    def test_ru_unknown_falls_back_to_en(self):
-        """Unknown station key falls back to English."""
-        result = translate_station_name("NonExistentStation", "ru")
-        assert result == "NonExistentStation"
+    def test_ru_kutaisi_city(self):
+        """Kutaisi city center has a Russian translation."""
+        result = translate_station_name(57530, "ru")
+        assert result == "Кутаиси"
+
+    def test_ru_zugdidi(self):
+        result = translate_station_name(57290, "ru")
+        assert result == "Зугдиди"
+
+    def test_ru_kobuleti(self):
+        result = translate_station_name(57120, "ru")
+        assert result == "Кобулети"
+
+    def test_ru_ozurgeti(self):
+        result = translate_station_name(57100, "ru")
+        assert result == "Озургети"
+
+    def test_ru_unknown_code_fallback(self):
+        """Unknown code falls back to English name (stringified code)."""
+        result = translate_station_name(99999, "ru")
+        assert result == "99999"
 
     # ── Georgian ──────────────────────────────────────────────────
 
     def test_ka_known_station(self):
         """Known station should return the Georgian name."""
-        result = translate_station_name("Tbilisi", "ka")
+        result = translate_station_name(56014, "ka")
         assert result == "თბილისი"
 
     def test_ka_batumi(self):
-        result = translate_station_name("Batumi", "ka")
+        result = translate_station_name(57151, "ka")
         assert result == "ბათუმი"
 
+    def test_ka_airport(self):
+        result = translate_station_name(57450, "ka")
+        assert result == "ქუთაისის საერთაშორისო აეროპორტი"
+
+    def test_ka_kutaisi_city(self):
+        """Kutaisi city center has a Georgian translation."""
+        result = translate_station_name(57530, "ka")
+        assert result == "ქუთაისი"
+
     def test_ka_poti(self):
-        result = translate_station_name("Poti", "ka")
+        result = translate_station_name(57210, "ka")
         assert result == "ფოთი"
 
-    def test_ka_unknown_falls_back_to_en(self):
-        """Unknown station key falls back to English."""
-        result = translate_station_name("NonExistentStation", "ka")
-        assert result == "NonExistentStation"
+    def test_ka_unknown_code_fallback(self):
+        """Unknown code falls back to string representation."""
+        result = translate_station_name(99999, "ka")
+        assert result == "99999"
 
     # ── Fallback for unsupported languages ─────────────────────────
 
     def test_unsupported_lang_falls_back_to_en(self):
         """Unsupported language code returns the English name."""
-        result = translate_station_name("Tbilisi", "fr")
+        result = translate_station_name(56014, "fr")
         assert result == "Tbilisi"
 
-    # ── All 20 stations in RU ─────────────────────────────────────
+    # ── All known codes in RU ─────────────────────────────────────
 
-    def test_ru_all_stations_have_translation(self):
-        """Every station defined in _STATION_DATA has a Russian name."""
+    def test_ru_all_codes_have_translation(self):
+        """Every code in _STATION_DATA with a code has a Russian translation."""
         from stations import STATION_NAMES_RU, _STATION_DATA  # noqa: PLC0415
 
-        for _, name, *_ in _STATION_DATA:
-            translated = translate_station_name(name, "ru")
-            assert translated != name, f"Station '{name}' has no Russian translation"
-            assert translated == STATION_NAMES_RU[name]
+        for code_str, _, _, _, _ in _STATION_DATA:
+            if not code_str:
+                continue
+            code = int(code_str)
+            translated = translate_station_name(code, "ru")
+            expected = STATION_NAMES_RU[code]
+            assert translated == expected, (
+                f"Code {code} expected '{expected}', got '{translated}'"
+            )
 
-    # ── All 20 stations in KA ─────────────────────────────────────
+    # ── All known codes in KA ─────────────────────────────────────
 
-    def test_ka_all_stations_have_translation(self):
-        """Every station defined in _STATION_DATA has a Georgian name."""
+    def test_ka_all_codes_have_translation(self):
+        """Every code in _STATION_DATA with a code has a Georgian translation."""
         from stations import STATION_NAMES_KA, _STATION_DATA  # noqa: PLC0415
 
-        for _, name, *_ in _STATION_DATA:
-            translated = translate_station_name(name, "ka")
-            assert translated != name, f"Station '{name}' has no Georgian translation"
-            assert translated == STATION_NAMES_KA[name]
+        for code_str, _, _, _, _ in _STATION_DATA:
+            if not code_str:
+                continue
+            code = int(code_str)
+            translated = translate_station_name(code, "ka")
+            expected = STATION_NAMES_KA[code]
+            assert translated == expected, (
+                f"Code {code} expected '{expected}', got '{translated}'"
+            )
+
+    # ── Consistency checks ────────────────────────────────────────
+
+    def test_ru_all_codes_distinct(self):
+        """Russian translations should all be distinct."""
+        from stations import STATION_NAMES_RU
+        assert len(set(STATION_NAMES_RU.values())) == len(STATION_NAMES_RU), (
+            "Duplicate Russian translation detected"
+        )
+
+    def test_ka_all_codes_distinct(self):
+        """Georgian translations should all be distinct."""
+        from stations import STATION_NAMES_KA
+        assert len(set(STATION_NAMES_KA.values())) == len(STATION_NAMES_KA), (
+            "Duplicate Georgian translation detected"
+        )
+
+    def test_idempotent_en(self):
+        """Calling twice with same args returns same result."""
+        assert translate_station_name(56014, "en") == translate_station_name(56014, "en")
+
+    def test_idempotent_ru(self):
+        assert translate_station_name(57151, "ru") == translate_station_name(57151, "ru")
+
+    def test_idempotent_ka(self):
+        assert translate_station_name(57450, "ka") == translate_station_name(57450, "ka")
+
+    # ── Parametrized codes ────────────────────────────────────────
+
+    def test_parametrized_codes(self):
+        """A handful of diverse codes in all languages."""
+        codes = [56014, 57151, 57450, 57530, 57290, 57120]
+        for code in codes:
+            en = translate_station_name(code, "en")
+            ru = translate_station_name(code, "ru")
+            ka = translate_station_name(code, "ka")
+            assert en, f"Empty English for code {code}"
+            assert ru, f"Empty Russian for code {code}"
+            assert ka, f"Empty Georgian for code {code}"
+            # Each language should be different (not fallback)
+            assert ru != en or ru == str(code), f"Russian fell back to English for code {code}"
+            assert ka != en or ka == str(code), f"Georgian fell back to English for code {code}"
 
     # ═══════════════════════ Wizard keys ════════════════════════════════
 

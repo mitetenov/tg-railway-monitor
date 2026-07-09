@@ -34,10 +34,10 @@ _STATION_DATA: list[tuple[str, str, str, bool, str]] = [
 
 # ── Derived mappings ─────────────────────────────────────────────────
 
-STATION_NAMES: dict[str, str] = {
-    code: name for code, name, *_ in _STATION_DATA if code
+STATION_NAMES: dict[int, str] = {
+    int(code): name for code, name, *_ in _STATION_DATA if code
 }
-"""Code → English name, e.g. ``"56014" → "Tbilisi"``."""
+"""Code → English name, e.g. ``56014 → "Tbilisi"``."""
 
 STATION_SLUGS: dict[str, str] = {
     name: slug for _, name, slug, *_ in _STATION_DATA
@@ -53,38 +53,40 @@ FALLBACK_STATIONS: list[dict] = [
 ]
 """Backward-compatible fallback list used by bot.py when the API is down."""
 
-# ── Localised names ─────────────────────────────────────────────────────
+# ── Localised names (code-keyed) ─────────────────────────────────────────
 
-STATION_NAMES_RU: dict[str, str] = {
-    "Tbilisi": "Тбилиси",
-    "Batumi": "Батуми",
-    "Kutaisi Airport": "Аэропорт Кутаиси",
-    "Kutaisi": "Кутаиси",
-    "Zugdidi": "Зугдиди",
-    "Kobuleti": "Кобулети",
-    "Ozurgeti": "Озургети",
-    "Senaki": "Сенаки",
-    "Samtredia": "Самтредиа",
-    "Ureki": "Уреки",
-    "Poti": "Поти",
-    "Gori": "Гори",
-    "Khashuri": "Хашури",
-    "Zestafoni": "Зестафони",
-    "Rioni": "Риони",
-    "Nigoiti": "Нигоити",
-    "Mtskheta": "Мцхета",
-    "Kaspi": "Каспи",
-    "Borjomi": "Боржоми",
-    "Akhaltsikhe": "Ахалцихе",
+STATION_NAMES_RU: dict[int, str] = {
+    56014: "Тбилиси",
+    57151: "Батуми",
+    57450: "Аэропорт Кутаиси",
+    57530: "Кутаиси",
+    57290: "Зугдиди",
+    57120: "Кобулети",
+    57100: "Озургети",
+    57190: "Сенаки",
+    57000: "Самтредиа",
+    57070: "Уреки",
+    57210: "Поти",
+    57900: "Гори",
+    57720: "Хашури",
+    57600: "Зестафони",
+    57510: "Риони",
+    57030: "Нигоити",
+    56040: "Мцхета",
+    56080: "Каспи",
 }
-"""English station name → Russian name, e.g. ``"Tbilisi" → "Тбилиси"``.
-Verified against Russian Wikipedia where available."""
+"""Code → Russian name, e.g. ``56014 → "Тбилиси"``.
 
-STATION_NAMES_KA: dict[str, str] = {
-    name: geo for _, name, _, _, geo in _STATION_DATA
+Only stations with a known station code are included.
+Stations without a code (Borjomi, Akhaltsikhe) are excluded.
+"""
+
+STATION_NAMES_KA: dict[int, str] = {
+    int(code): geo for code, _, _, _, geo in _STATION_DATA if code
 }
-"""English station name → Georgian (ქართული) name, e.g. ``"Tbilisi" → "თბილისი"``.
-Derived from ``_STATION_DATA``."""
+"""Code → Georgian (ქართული) name, e.g. ``56014 → "თბილისი"``.
+Derived from ``_STATION_DATA``.
+"""
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

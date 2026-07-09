@@ -113,8 +113,10 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
 
     # ── Build one grouped notification with ALL available rides ──────
     t = get_user_translation(chat_id)
-    from_name_display = translate_station_name(config.get("from_station", "?"), t.lang)
-    to_name_display = translate_station_name(config.get("to_station", "?"), t.lang)
+    from_code_str = config.get("from_station_code", "0")
+    to_code_str = config.get("to_station_code", "0")
+    from_name_display = translate_station_name(int(from_code_str), t.lang)
+    to_name_display = translate_station_name(int(to_code_str), t.lang)
     lines = [
         t("poller.route_header",
           from_name=from_name_display,

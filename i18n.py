@@ -281,39 +281,29 @@ def clear_user_lang_cache() -> None:
 # ═══════════════════ Station name translation ═════════════════════
 
 
-def translate_station_name(station_key: str, lang: str) -> str:
-    """Translate a station name into the requested language.
+def translate_station_name(code: int, lang: str = "en") -> str:
+    """Return a station name localised to *lang*.
 
     Parameters
     ----------
-    station_key : str
-        The English station name (e.g. ``"Tbilisi"``, ``"Batumi"``).
-        This is the canonical key used in ``stations.py``.
+    code : int
+        Station code (e.g. ``56014`` for Tbilisi).
     lang : str
-        Target language code. Supported: ``"en"``, ``"ru"``, ``"ka"``.
+        Target language code (``"en"``, ``"ru"``, ``"ka"``).
+        Falls back to English for unknown languages.
 
     Returns
     -------
     str
-        The station name in the requested language.  Falls back to the
-        English (transliterated) name when a translation is not available
-        for the requested language.
+        The station name in the requested language, or the string
+        representation of *code* when no translation is available.
     """
-    if lang == "en":
-        return station_key
+    from stations import STATION_NAMES, STATION_NAMES_RU, STATION_NAMES_KA  # noqa: PLC0415
 
-    # Lazy import to avoid circular dependency (stations.py is standalone,
-    # but i18n is imported early in the startup path).
-    from stations import STATION_NAMES_RU, STATION_NAMES_KA  # noqa: PLC0415
-
-    table: dict[str, str] | None = None
+    fallback = str(code)
     if lang == "ru":
-        table = STATION_NAMES_RU
-    elif lang == "ka":
-        table = STATION_NAMES_KA
-
-    if table is not None:
-        return table.get(station_key, station_key)
-
-    # Unknown language — return the English name.
-    return station_key
+        return STATION_NAMES_RU.get(code, STATION_NAMES.get(code, fallback))
+    if lang == "ka":
+        return STATION_NAMES_KA.get(code, STATION_NAMES.get(code, fallback))
+    # Default: English
+    return STATION_NAMES.get(code, fallback)

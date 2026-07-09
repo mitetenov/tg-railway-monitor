@@ -558,9 +558,9 @@ class TestConstants:
         assert CLASS_NAMES[5] == "Business"
 
     def test_station_names_coverage(self):
-        assert STATION_NAMES["56014"] == "Tbilisi"
-        assert STATION_NAMES["57151"] == "Batumi"
-        assert STATION_NAMES["57450"] == "Kutaisi Airport"
+        assert STATION_NAMES[56014] == "Tbilisi"
+        assert STATION_NAMES[57151] == "Batumi"
+        assert STATION_NAMES[57450] == "Kutaisi Airport"
 
 
 # ═══════════════════════ TicketState ═══════════════════════════════════

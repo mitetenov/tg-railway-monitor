@@ -160,7 +160,7 @@ class TestStationKeyboard:
         bot._stations = [
             {"code": "56014", "stationName": "Tbilisi", "isPopular": True},
             {"code": "57151", "stationName": "Batumi", "isPopular": True},
-            {"code": "57000", "stationName": "Kutaisi", "isPopular": True},
+            {"code": "99999", "stationName": "TestStation", "isPopular": True},
         ]
         bot._station_index = {s["code"]: s for s in bot._stations}
 
@@ -169,7 +169,7 @@ class TestStationKeyboard:
         texts = [btn.text for row in keyboard for btn in row]
         assert "Tbilisi" not in texts
         assert "Batumi" not in texts
-        assert "Kutaisi" in texts
+        assert "99999" in texts
 
 
 # ═══════════════════════ Date Keyboard ═════════════════════════════════
