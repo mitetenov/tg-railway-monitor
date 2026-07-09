@@ -169,7 +169,8 @@ class TestStationKeyboard:
         texts = [btn.text for row in keyboard for btn in row]
         assert "Tbilisi" not in texts
         assert "Batumi" not in texts
-        assert "99999" in texts
+        assert "99999" not in texts  # Now shows stationName "TestStation" via fallback
+        assert "TestStation" in texts
 
 
 # ═══════════════════════ Date Keyboard ═════════════════════════════════
