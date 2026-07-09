@@ -839,3 +839,161 @@ class TestTranslateStationNameFallbackMocked:
              patch("stations.STATION_NAMES_KA", self.MOCK_KA):
             result = translate_station_name(code, "en", fallback="Edge")
             assert result == "Edge"
+
+
+# ═══════════════════════ 36-Station Integration ═══════════════════
+
+
+class TestAll36StationsTranslateStationName:
+    """Integration: all 36 stations (known + API-only) produce names, not codes."""
+
+    ALL_STATIONS: list[tuple[int, str]] = [
+        (56014, "Tbilisi"), (57151, "Batumi"), (57450, "Kutaisi Airport"),
+        (57530, "Kutaisi"), (57290, "Zugdidi"), (57120, "Kobuleti"),
+        (57100, "Ozurgeti"), (57190, "Senaki"), (57000, "Samtredia"),
+        (57070, "Ureki"), (57210, "Poti"), (57900, "Gori"),
+        (57720, "Khashuri"), (57600, "Zestafoni"), (57510, "Rioni"),
+        (57030, "Nigoiti"), (56040, "Mtskheta"), (56080, "Kaspi"),
+        (10001, "Station Alpha"), (10002, "Station Beta"),
+        (10003, "Station Gamma"), (10004, "Station Delta"),
+        (10005, "Station Epsilon"), (10006, "Station Zeta"),
+        (10007, "Station Eta"), (10008, "Station Theta"),
+        (10009, "Station Iota"), (10010, "Station Kappa"),
+        (10011, "Station Lambda"), (10012, "Station Mu"),
+        (10013, "Station Nu"), (10014, "Station Xi"),
+        (10015, "Station Omicron"), (10016, "Station Pi"),
+        (10017, "Station Rho"), (10018, "Station Sigma"),
+    ]
+
+    def test_all_36_en_with_fallback_never_numeric(self):
+        """With API fallback, all 36 codes return names, never digits."""
+        for code, fallback_name in self.ALL_STATIONS:
+            result = translate_station_name(code, "en", fallback=fallback_name)
+            assert not result.isdigit(), (
+                f"Code {code} with fallback '{fallback_name}' "
+                f"returned numeric '{result}'"
+            )
+            assert result, f"Code {code} returned empty"
+
+    def test_all_36_ru_with_fallback_never_numeric(self):
+        """All codes with fallback in RU language return names, not digits."""
+        for code, fallback_name in self.ALL_STATIONS:
+            result = translate_station_name(code, "ru", fallback=fallback_name)
+            assert not result.isdigit(), (
+                f"Code {code} RU with fallback '{fallback_name}' "
+                f"returned numeric '{result}'"
+            )
+
+    def test_all_36_ka_with_fallback_never_numeric(self):
+        """All codes with fallback in KA language return names, not digits."""
+        for code, fallback_name in self.ALL_STATIONS:
+            result = translate_station_name(code, "ka", fallback=fallback_name)
+            assert not result.isdigit(), (
+                f"Code {code} KA with fallback '{fallback_name}' "
+                f"returned numeric '{result}'"
+            )
+
+    def test_known_codes_use_translations_not_fallback(self):
+        """Known codes use hardcoded translations, ignoring the API fallback."""
+        for code, _ in self.ALL_STATIONS:
+            if code >= 50000:  # known codes (56000-57900 range)
+                result_en = translate_station_name(code, "en", fallback="IGNORE ME")
+                result_ru = translate_station_name(code, "ru", fallback="IGNORE ME")
+                result_ka = translate_station_name(code, "ka", fallback="IGNORE ME")
+                assert "IGNORE ME" not in result_en, (
+                    f"Code {code} EN: fallback leaked into '{result_en}'"
+                )
+                assert "IGNORE ME" not in result_ru, (
+                    f"Code {code} RU: fallback leaked into '{result_ru}'"
+                )
+                assert "IGNORE ME" not in result_ka, (
+                    f"Code {code} KA: fallback leaked into '{result_ka}'"
+                )
+
+    def test_unknown_codes_use_fallback_exactly(self):
+        """Unknown codes return the fallback string verbatim."""
+        for code, fallback_name in self.ALL_STATIONS:
+            if code < 50000:  # unknown codes
+                result_en = translate_station_name(code, "en", fallback=fallback_name)
+                result_ru = translate_station_name(code, "ru", fallback=fallback_name)
+                result_ka = translate_station_name(code, "ka", fallback=fallback_name)
+                assert result_en == fallback_name, (
+                    f"Code {code} EN: expected '{fallback_name}', got '{result_en}'"
+                )
+                assert result_ru == fallback_name, (
+                    f"Code {code} RU: expected '{fallback_name}', got '{result_ru}'"
+                )
+                assert result_ka == fallback_name, (
+                    f"Code {code} KA: expected '{fallback_name}', got '{result_ka}'"
+                )
+
+
+# ═══════════════════════ Additional fallback edge cases ═══════════
+
+
+class TestTranslateStationNameFallbackEdgeCases:
+    """Edge cases exercising the full RU/KA → EN → fallback chain."""
+
+    def test_ru_missing_code_falls_to_en_not_fallback(self):
+        """When RU dict lacks a code but EN has it, EN name wins over fallback."""
+        with patch("stations.STATION_NAMES", {56014: "Tbilisi", 57151: "Batumi"}), \
+             patch("stations.STATION_NAMES_RU", {56014: "Тбилиси"}), \
+             patch("stations.STATION_NAMES_KA", {56014: "თბილისი"}):
+            result = translate_station_name(57151, "ru", fallback="Batumi API")
+            assert result == "Batumi", (
+                f"Expected EN 'Batumi', got '{result}'"
+            )
+
+    def test_ka_missing_code_falls_to_en_not_fallback(self):
+        """When KA dict lacks a code but EN has it, EN name wins over fallback."""
+        with patch("stations.STATION_NAMES", {56014: "Tbilisi", 57151: "Batumi"}), \
+             patch("stations.STATION_NAMES_RU", {56014: "Тбилиси"}), \
+             patch("stations.STATION_NAMES_KA", {56014: "თბილისი"}):
+            result = translate_station_name(57151, "ka", fallback="Batumi API")
+            assert result == "Batumi", (
+                f"Expected EN 'Batumi', got '{result}'"
+            )
+
+    def test_code_in_neither_en_nor_lang_uses_fallback(self):
+        """Code missing from both lang and EN dict: fallback returned."""
+        with patch("stations.STATION_NAMES", {56014: "Tbilisi"}), \
+             patch("stations.STATION_NAMES_RU", {56014: "Тбилиси"}), \
+             patch("stations.STATION_NAMES_KA", {56014: "თბილისი"}):
+            for lang in ("en", "ru", "ka"):
+                result = translate_station_name(99999, lang, fallback="Custom")
+                assert result == "Custom", (
+                    f"Lang '{lang}': expected 'Custom', got '{result}'"
+                )
+
+    def test_code_in_neither_en_nor_lang_no_fallback_returns_str_code(self):
+        """Code missing everywhere, no fallback: returns str(code)."""
+        with patch("stations.STATION_NAMES", {56014: "Tbilisi"}), \
+             patch("stations.STATION_NAMES_RU", {56014: "Тбилиси"}), \
+             patch("stations.STATION_NAMES_KA", {56014: "თბილისი"}):
+            for lang in ("en", "ru", "ka"):
+                result = translate_station_name(99999, lang)
+                assert result == "99999", (
+                    f"Lang '{lang}': expected '99999', got '{result}'"
+                )
+
+    def test_realistic_api_fallback_names(self):
+        """API may return names like 'Tbilisi Central' — pass through correctly."""
+        cases = [
+            (56014, "Tbilisi Central", "en", "Tbilisi"),
+            (56014, "Tbilisi Central", "ru", "Тбилиси"),
+            (56014, "Tbilisi Central", "ka", "თბილისი"),
+            (99999, "New Station 42", "en", "New Station 42"),
+            (99999, "New Station 42", "ru", "New Station 42"),
+            (99999, "New Station 42", "ka", "New Station 42"),
+        ]
+        for code, fallback, lang, expected in cases:
+            result = translate_station_name(code, lang, fallback=fallback)
+            assert result == expected, (
+                f"Code {code} fallback '{fallback}' lang '{lang}': "
+                f"expected '{expected}', got '{result}'"
+            )
+
+    def test_fallback_none_vs_empty_string(self):
+        """fallback=None gives str(code); fallback='' gives empty string."""
+        assert translate_station_name(99999, "en", fallback=None) == "99999"
+        assert translate_station_name(99999, "en", fallback="") == ""

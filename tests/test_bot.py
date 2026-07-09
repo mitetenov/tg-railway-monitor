@@ -800,3 +800,243 @@ class TestStationNameForCode:
                     f"Code {code} returned numeric '{result}' instead of a name"
                 )
                 assert result, f"Code {code} returned empty string"
+
+
+# ═══════════════════════ Full 36-Station Integration ═══════════════════
+
+# A realistic 36-station dataset mimicking what the API may return.
+# Mix of known codes (with hardcoded translations) and unknown codes
+# (relying on API stationName as fallback).
+_THIRTY_SIX_STATIONS = [
+    {"code": "56014", "stationName": "Tbilisi",             "isPopular": True},
+    {"code": "57151", "stationName": "Batumi",              "isPopular": True},
+    {"code": "57450", "stationName": "Kutaisi Airport",     "isPopular": True},
+    {"code": "57530", "stationName": "Kutaisi",             "isPopular": True},
+    {"code": "57290", "stationName": "Zugdidi",             "isPopular": True},
+    {"code": "57120", "stationName": "Kobuleti",            "isPopular": True},
+    {"code": "57100", "stationName": "Ozurgeti",            "isPopular": True},
+    {"code": "57190", "stationName": "Senaki",              "isPopular": True},
+    {"code": "57000", "stationName": "Samtredia",           "isPopular": True},
+    {"code": "57070", "stationName": "Ureki",               "isPopular": False},
+    {"code": "57210", "stationName": "Poti",                "isPopular": True},
+    {"code": "57900", "stationName": "Gori",                "isPopular": False},
+    {"code": "57720", "stationName": "Khashuri",            "isPopular": False},
+    {"code": "57600", "stationName": "Zestafoni",           "isPopular": False},
+    {"code": "57510", "stationName": "Rioni",               "isPopular": False},
+    {"code": "57030", "stationName": "Nigoiti",             "isPopular": False},
+    {"code": "56040", "stationName": "Mtskheta",            "isPopular": False},
+    {"code": "56080", "stationName": "Kaspi",               "isPopular": False},
+    {"code": "10001", "stationName": "Station Alpha",       "isPopular": False},
+    {"code": "10002", "stationName": "Station Beta",        "isPopular": False},
+    {"code": "10003", "stationName": "Station Gamma",       "isPopular": False},
+    {"code": "10004", "stationName": "Station Delta",       "isPopular": False},
+    {"code": "10005", "stationName": "Station Epsilon",     "isPopular": False},
+    {"code": "10006", "stationName": "Station Zeta",        "isPopular": False},
+    {"code": "10007", "stationName": "Station Eta",         "isPopular": False},
+    {"code": "10008", "stationName": "Station Theta",       "isPopular": False},
+    {"code": "10009", "stationName": "Station Iota",        "isPopular": False},
+    {"code": "10010", "stationName": "Station Kappa",       "isPopular": False},
+    {"code": "10011", "stationName": "Station Lambda",      "isPopular": False},
+    {"code": "10012", "stationName": "Station Mu",          "isPopular": False},
+    {"code": "10013", "stationName": "Station Nu",          "isPopular": False},
+    {"code": "10014", "stationName": "Station Xi",          "isPopular": False},
+    {"code": "10015", "stationName": "Station Omicron",     "isPopular": False},
+    {"code": "10016", "stationName": "Station Pi",          "isPopular": False},
+    {"code": "10017", "stationName": "Station Rho",         "isPopular": False},
+    {"code": "10018", "stationName": "Station Sigma",       "isPopular": False},
+]
+
+
+class TestAll36StationsNoNumericCodes:
+    """Integration tests: all 36 stations produce names, never numeric codes."""
+
+    def setup_method(self):
+        import bot
+        bot._stations = list(_THIRTY_SIX_STATIONS)
+        bot._station_index = {s["code"]: s for s in bot._stations}
+
+    def test_build_station_keyboard_all_pages_no_numeric(self):
+        """Every button on every page of the paginated keyboard is a name."""
+        import bot
+        total = len(bot._stations) - 2
+        total_pages = max(1, (total + bot.STATIONS_PER_PAGE - 1) // bot.STATIONS_PER_PAGE)
+        for page in range(total_pages):
+            markup = bot.build_station_keyboard("wiz_from", page)
+            for row in markup.inline_keyboard:
+                for btn in row:
+                    if btn.callback_data in ("noop", "cancel") or (
+                        btn.callback_data and btn.callback_data.startswith("page:")
+                    ):
+                        continue
+                    assert not btn.text.isdigit(), (
+                        f"Page {page}: button '{btn.text}' is a numeric code"
+                    )
+                    if btn.callback_data and btn.callback_data.startswith("wiz_from:"):
+                        code_from_cb = btn.callback_data.split(":", 1)[1]
+                        assert btn.text != code_from_cb, (
+                            f"Page {page}: button text matches code '{code_from_cb}'"
+                        )
+
+    def test_build_quick_station_keyboard_no_numeric(self):
+        """Quick-pick keyboard always shows names."""
+        import bot
+        t = MagicMock()
+        t.lang = "en"
+        t.side_effect = lambda key: key
+        markup = bot.build_quick_station_keyboard("wiz_from", t)
+        for row in markup.inline_keyboard:
+            for btn in row:
+                if btn.callback_data == "cancel":
+                    continue
+                assert not btn.text.isdigit(), f"Quick-pick '{btn.text}' is numeric"
+
+    def test_build_station_keyboard_all_pages_all_actions(self):
+        """Both wiz_from and wiz_to keyboards are numeric-free on all pages."""
+        import bot
+        total = len(bot._stations) - 2
+        total_pages = max(1, (total + bot.STATIONS_PER_PAGE - 1) // bot.STATIONS_PER_PAGE)
+        for action in ("wiz_from", "wiz_to"):
+            for page in range(total_pages):
+                markup = bot.build_station_keyboard(action, page)
+                for row in markup.inline_keyboard:
+                    for btn in row:
+                        if btn.callback_data in ("noop", "cancel") or (
+                            btn.callback_data and btn.callback_data.startswith("page:")
+                        ):
+                            continue
+                        assert not btn.text.isdigit(), (
+                            f"Action '{action}' page {page}: '{btn.text}' is numeric"
+                        )
+
+    def test_all_36_stations_return_names_not_numbers(self):
+        """station_name_for_code never returns a bare number."""
+        import bot
+        for s in bot._stations:
+            code = s.get("code", "")
+            station_name = s.get("stationName", "")
+            if not code:
+                continue
+            result = bot.station_name_for_code(code, station_name=station_name)
+            assert not result.isdigit(), (
+                f"Code {code} returned numeric '{result}'"
+            )
+            assert result, f"Code {code} returned empty"
+
+    def test_all_36_stations_all_languages(self):
+        """Every station returns a non-digit name in EN, RU, and KA."""
+        from i18n import translate_station_name
+        for s in _THIRTY_SIX_STATIONS:
+            code = s.get("code", "")
+            station_name = s.get("stationName", "")
+            if not code:
+                continue
+            code_int = int(code)
+            for lang in ("en", "ru", "ka"):
+                result = translate_station_name(code_int, lang, fallback=station_name)
+                assert not result.isdigit(), (
+                    f"Code {code} lang '{lang}' returned numeric '{result}'"
+                )
+                assert result, f"Code {code} lang '{lang}' returned empty"
+
+    def test_build_station_keyboard_with_translation(self):
+        """Paginated keyboard with real translation uses real names."""
+        import bot
+        from i18n import get_translation
+        t = get_translation("en")
+        markup = bot.build_station_keyboard("wiz_from", 0, t)
+        texts = []
+        for row in markup.inline_keyboard:
+            for btn in row:
+                if btn.callback_data not in ("noop", "cancel") and not (
+                    btn.callback_data and btn.callback_data.startswith("page:")
+                ):
+                    texts.append(btn.text)
+        known_names = {"Kutaisi Airport", "Kutaisi", "Zugdidi", "Kobuleti",
+                       "Ozurgeti", "Senaki", "Samtredia", "Ureki", "Poti",
+                       "Gori", "Khashuri", "Zestafoni", "Rioni", "Nigoiti",
+                       "Mtskheta", "Kaspi"}
+        found_known = known_names & set(texts)
+        assert len(found_known) > 0, "Should find at least some known station names"
+
+    def test_quick_station_keyboard_with_translation(self):
+        """Quick-picks use translated names."""
+        import bot
+        from i18n import get_translation
+        t = get_translation("en")
+        markup = bot.build_quick_station_keyboard("wiz_from", t)
+        texts = [btn.text for row in markup.inline_keyboard
+                 for btn in row if btn.callback_data != "cancel"]
+        assert "Tbilisi" in texts or any("Tbilisi" in t for t in texts), (
+            f"Quick-pick buttons: {texts}"
+        )
+        assert "Batumi" in texts or any("Batumi" in t for t in texts), (
+            f"Quick-pick buttons: {texts}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_departure_select_shows_name_not_code(self):
+        """Selecting a station stores and displays a name."""
+        import bot
+        update = make_update(callback_data="wiz_from:57000")
+        ctx = make_context()
+        with patch.object(bot, "_show_arrival", AsyncMock(return_value=bot.ARRIVAL_SELECT)):
+            await bot.wizard_departure_handler(update, ctx)
+        assert ctx.user_data["from_code"] == "57000"
+        assert ctx.user_data["from_station"] == "Samtredia"
+
+    @pytest.mark.asyncio
+    async def test_arrival_select_shows_name_not_code(self):
+        """Selecting arrival displays translated name in confirmation."""
+        import bot
+        update = make_update(callback_data="wiz_to:57151", chat_id=12345)
+        ctx = make_context()
+        ctx.user_data["from_code"] = "56014"
+        ctx.user_data["from_station"] = "Tbilisi"
+        ctx.user_data["date"] = "2026-07-15"
+        with patch("bot.load_config", return_value={}), \
+             patch("bot.save_config"), \
+             patch.object(bot, "_show_class", AsyncMock(return_value=bot.CLASS_SELECT)):
+            await bot.wizard_arrival_handler(update, ctx)
+        edit_call = update.callback_query.edit_message_text.call_args
+        message_text = edit_call[0][0]
+        assert "Tbilisi" in message_text, f"Missing Tbilisi in: {message_text}"
+        assert "Batumi" in message_text, f"Missing Batumi in: {message_text}"
+        assert "56014" not in message_text, (
+            f"Numeric code in message: {message_text}"
+        )
+        assert "57151" not in message_text, (
+            f"Numeric code in message: {message_text}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_unknown_code_still_shows_api_name(self):
+        """Even unknown codes produce a name via API fallback."""
+        import bot
+        update = make_update(callback_data="wiz_from:10001", chat_id=12345)
+        ctx = make_context()
+        with patch.object(bot, "_show_arrival", AsyncMock(return_value=bot.ARRIVAL_SELECT)):
+            await bot.wizard_departure_handler(update, ctx)
+        stored_name = ctx.user_data.get("from_station", "")
+        assert stored_name == "Station Alpha", f"Got '{stored_name}'"
+
+    @pytest.mark.asyncio
+    async def test_arrival_unknown_code_shows_api_name_in_confirmation(self):
+        """Arrival with unknown code uses API name in route_saved message."""
+        import bot
+        update = make_update(callback_data="wiz_to:10018", chat_id=12345)
+        ctx = make_context()
+        ctx.user_data["from_code"] = "56014"
+        ctx.user_data["from_station"] = "Tbilisi"
+        ctx.user_data["date"] = "2026-07-15"
+        with patch("bot.load_config", return_value={}), \
+             patch("bot.save_config"), \
+             patch.object(bot, "_show_class", AsyncMock(return_value=bot.CLASS_SELECT)):
+            await bot.wizard_arrival_handler(update, ctx)
+        edit_call = update.callback_query.edit_message_text.call_args
+        message_text = edit_call[0][0]
+        assert "Station Sigma" in message_text, (
+            f"Expected 'Station Sigma' in: {message_text}"
+        )
+        assert "10018" not in message_text, (
+            f"Numeric code in message: {message_text}"
+        )
