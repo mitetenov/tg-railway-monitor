@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+from unittest.mock import patch
 
 import pytest
 
@@ -587,3 +588,191 @@ class TestTranslateStationName:
         assert t("wizard.select_departure") != "?wizard.select_departure?"
         assert t("wizard.select_class") != "?wizard.select_class?"
         assert t("wizard.monitoring_started") != "?wizard.monitoring_started?"
+
+
+# ═══════════════════════ Fallback with mocked station dicts ═══════
+
+
+class TestTranslateStationNameFallbackMocked:
+    """Tests for fallback logic with isolated (patched) station dictionaries.
+
+    Uses ``unittest.mock.patch`` to replace ``stations.STATION_NAMES``,
+    ``stations.STATION_NAMES_RU``, and ``stations.STATION_NAMES_KA`` so that
+    scenarios below are not coupled to the real station data set.
+    """
+
+    MOCK_EN = {56014: "Tbilisi", 57151: "Batumi"}
+    MOCK_RU = {56014: "Тбилиси", 57151: "Батуми"}
+    MOCK_KA = {56014: "თბილისი", 57151: "ბათუმი"}
+
+    # Simulate platform-level codes that appear only in English
+    MOCK_EN_PLATFORMS = {1001: "Platform 1", 1002: "Platform 2"}
+
+    STATION_CODE = 56014      # exists in all mock dicts
+    UNKNOWN_CODE = 99999       # exists in none
+    PLATFORM_CODE = 1001       # "platform" — exists only in mock en platforms
+
+    # ── Scenario 1: translation found → returns translation ──────────
+
+    @pytest.mark.parametrize("lang,expected", [
+        ("en", "Tbilisi"),
+        ("ru", "Тбилиси"),
+        ("ka", "თბილისი"),
+    ])
+    def test_known_code_ignores_fallback(self, lang, expected):
+        """Translation exists => returned regardless of what fallback says."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            assert translate_station_name(self.STATION_CODE, lang, fallback="N/A") == expected
+            assert translate_station_name(self.STATION_CODE, lang, fallback=None) == expected
+            assert translate_station_name(self.STATION_CODE, lang) == expected
+            assert translate_station_name(self.STATION_CODE, lang, fallback="") == expected
+
+    # ── Scenario 2: code unknown, fallback given → returns fallback ──
+
+    @pytest.mark.parametrize("lang,fallback_text", [
+        ("en", "Unknown Station"),
+        ("ru", "Неизвестная станция"),
+        ("ka", "უცნობი სადგური"),
+    ])
+    def test_unknown_code_returns_fallback(self, lang, fallback_text):
+        """Code not in any dict + fallback provided => fallback returned."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(self.UNKNOWN_CODE, lang, fallback=fallback_text)
+            assert result == fallback_text
+
+    def test_unknown_code_returns_platform_fallback(self):
+        """Platform-like code not in any dict + fallback => fallback returned."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(99901, "en", fallback="Platform 12")
+            assert result == "Platform 12"
+
+    # ── Scenario 3: code unknown, fallback=None → returns str(code) ──
+
+    @pytest.mark.parametrize("lang", ["en", "ru", "ka"])
+    def test_unknown_code_no_fallback_returns_str_code(self, lang):
+        """Code not in any dict, no fallback => returns str(code)."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(self.UNKNOWN_CODE, lang)
+            assert result == str(self.UNKNOWN_CODE)
+
+    @pytest.mark.parametrize("lang", ["en", "ru", "ka"])
+    def test_unknown_code_explicit_none(self, lang):
+        """Code not in any dict + explicit fallback=None => str(code)."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(self.UNKNOWN_CODE, lang, fallback=None)
+            assert result == str(self.UNKNOWN_CODE)
+
+    # ── Platform-level codes ────────────────────────────────────────
+
+    def test_platform_code_en(self):
+        """Platform code present in EN dict returns English name."""
+        with patch("stations.STATION_NAMES", {**self.MOCK_EN, **self.MOCK_EN_PLATFORMS}), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(self.PLATFORM_CODE, "en")
+            assert result == "Platform 1"
+
+    def test_platform_code_ru_falls_to_en(self):
+        """Platform code not in RU dict falls back to English name."""
+        with patch("stations.STATION_NAMES", {**self.MOCK_EN, **self.MOCK_EN_PLATFORMS}), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(self.PLATFORM_CODE, "ru")
+            assert result == "Platform 1"
+
+    def test_platform_code_ru_fallback_ignored_when_code_in_en(self):
+        """Platform code in EN dict => fallback is ignored, EN name returned.
+
+        The fallback chain for RU is: RU dict → EN dict → fallback/default.
+        Since the platform code exists in EN, the fallback is never reached.
+        """
+        with patch("stations.STATION_NAMES", {**self.MOCK_EN, **self.MOCK_EN_PLATFORMS}), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(self.PLATFORM_CODE, "ru", fallback="Платформа 1")
+            assert result == "Platform 1"  # EN fallback, not fallback param
+
+    def test_platform_code_ka_falls_to_en(self):
+        """Platform code not in KA dict falls back to English name."""
+        with patch("stations.STATION_NAMES", {**self.MOCK_EN, **self.MOCK_EN_PLATFORMS}), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", {}):
+            result = translate_station_name(self.PLATFORM_CODE, "ka")
+            assert result == "Platform 1"
+
+    # ── Code exists in EN but empty in RU/KA ───────────────────────
+
+    def test_en_only_code_ru_falls_to_en(self):
+        """Code in EN but not RU => returns EN name (fallback never reached)."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN), \
+             patch("stations.STATION_NAMES_RU", {}), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(57151, "ru", fallback="Неизвестно")
+            assert result == "Batumi"  # EN fallback, not the explicit fallback param
+
+    def test_en_only_code_ru_no_fallback(self):
+        """Code in EN but not RU, no fallback => returns EN name."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN), \
+             patch("stations.STATION_NAMES_RU", {}), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(57151, "ru")
+            assert result == "Batumi"
+
+    # ── Unsupported language ────────────────────────────────────────
+
+    def test_unsupported_lang_with_fallback(self):
+        """Unsupported lang + code not in EN + fallback => fallback returned."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN):
+            result = translate_station_name(self.UNKNOWN_CODE, "fr", fallback="Fallback")
+            assert result == "Fallback"
+
+    def test_unsupported_lang_no_fallback(self):
+        """Unsupported lang + code not in EN, no fallback => str(code)."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN):
+            result = translate_station_name(self.UNKNOWN_CODE, "fr")
+            assert result == str(self.UNKNOWN_CODE)
+
+    # ── Edge cases for fallback value ──────────────────────────────
+
+    @pytest.mark.parametrize("fallback_val", [
+        "",
+        "0",
+        "   ",
+        "!@#$%",
+        "123",
+        "A" * 100,
+    ])
+    def test_various_fallback_strings(self, fallback_val):
+        """Various fallback values pass through unchanged for unknown codes."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(self.UNKNOWN_CODE, "en", fallback=fallback_val)
+            assert result == fallback_val
+
+    # ── Large / weird codes ────────────────────────────────────────
+
+    @pytest.mark.parametrize("code", [
+        -1,
+        0,
+        1,
+        2_147_483_647,
+        -2_147_483_648,
+    ])
+    def test_edge_case_codes_with_fallback(self, code):
+        """Edge-case integer codes with fallback => fallback returned."""
+        with patch("stations.STATION_NAMES", self.MOCK_EN), \
+             patch("stations.STATION_NAMES_RU", self.MOCK_RU), \
+             patch("stations.STATION_NAMES_KA", self.MOCK_KA):
+            result = translate_station_name(code, "en", fallback="Edge")
+            assert result == "Edge"
