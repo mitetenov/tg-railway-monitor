@@ -412,6 +412,46 @@ class TestTranslateStationName:
         result = translate_station_name(56014, "fr")
         assert result == "Tbilisi"
 
+    # ── Fallback parameter ──────────────────────────────────────────
+
+    def test_fallback_used_when_code_unknown(self):
+        """Unknown code returns fallback when provided."""
+        result = translate_station_name(99999, "en", fallback="Unknown Station")
+        assert result == "Unknown Station"
+
+    def test_fallback_ru_unknown(self):
+        """Unknown code in Russian returns fallback when provided."""
+        result = translate_station_name(99999, "ru", fallback="Неизвестно")
+        assert result == "Неизвестно"
+
+    def test_fallback_ka_unknown(self):
+        """Unknown code in Georgian returns fallback when provided."""
+        result = translate_station_name(99999, "ka", fallback="უცნობი")
+        assert result == "უცნობი"
+
+    def test_fallback_not_used_when_translation_known(self):
+        """Fallback is ignored when a translation exists."""
+        result = translate_station_name(56014, "en", fallback="N/A")
+        assert result == "Tbilisi"
+        result_ru = translate_station_name(56014, "ru", fallback="N/A")
+        assert result_ru == "Тбилиси"
+        result_ka = translate_station_name(56014, "ka", fallback="N/A")
+        assert result_ka == "თბილისი"
+
+    def test_fallback_none_default(self):
+        """fallback=None (default) returns stringified code like before."""
+        result_en = translate_station_name(99999, "en")
+        result_ru = translate_station_name(99999, "ru")
+        result_ka = translate_station_name(99999, "ka")
+        assert result_en == "99999"
+        assert result_ru == "99999"
+        assert result_ka == "99999"
+
+    def test_fallback_empty_string(self):
+        """Empty string fallback is returned as-is when code unknown."""
+        result = translate_station_name(99999, "en", fallback="")
+        assert result == ""
+
     # ── All known codes in RU ─────────────────────────────────────
 
     def test_ru_all_codes_have_translation(self):
