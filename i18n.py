@@ -281,7 +281,9 @@ def clear_user_lang_cache() -> None:
 # ═══════════════════ Station name translation ═════════════════════
 
 
-def translate_station_name(code: int, lang: str = "en") -> str:
+def translate_station_name(
+    code: int, lang: str = "en", fallback: str | None = None
+) -> str:
     """Return a station name localised to *lang*.
 
     Parameters
@@ -291,19 +293,25 @@ def translate_station_name(code: int, lang: str = "en") -> str:
     lang : str
         Target language code (``"en"``, ``"ru"``, ``"ka"``).
         Falls back to English for unknown languages.
+    fallback : str | None
+        Optional override returned when no translation exists for
+        *code* in any language.  When ``None`` (the default) the
+        string representation of *code* is used instead, preserving
+        the original behaviour.
 
     Returns
     -------
     str
-        The station name in the requested language, or the string
-        representation of *code* when no translation is available.
+        The station name in the requested language, or *fallback*
+        when provided, or the string representation of *code* when
+        no translation is available and no fallback was given.
     """
     from stations import STATION_NAMES, STATION_NAMES_RU, STATION_NAMES_KA  # noqa: PLC0415
 
-    fallback = str(code)
+    default = str(code) if fallback is None else fallback
     if lang == "ru":
-        return STATION_NAMES_RU.get(code, STATION_NAMES.get(code, fallback))
+        return STATION_NAMES_RU.get(code, STATION_NAMES.get(code, default))
     if lang == "ka":
-        return STATION_NAMES_KA.get(code, STATION_NAMES.get(code, fallback))
+        return STATION_NAMES_KA.get(code, STATION_NAMES.get(code, default))
     # Default: English
-    return STATION_NAMES.get(code, fallback)
+    return STATION_NAMES.get(code, default)
