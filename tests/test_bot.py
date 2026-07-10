@@ -760,30 +760,57 @@ class TestLangCommand:
             assert "Русский" in msg
 
     @pytest.mark.asyncio
-    async def test_lang_no_argument_shows_usage(self):
-        """'/lang' with no argument shows usage message."""
+    async def test_lang_no_argument_shows_keyboard(self):
+        """'/lang' with no argument shows inline keyboard with language buttons."""
         import bot
         update = make_update(chat_id=12345, text="/lang")
         ctx = make_context()
 
-        await bot.cmd_lang(update, ctx)
+        with patch("bot.get_user_translation") as mock_get_t:
+            t = MagicMock()
+            t.side_effect = lambda key, **kw: {
+                "lang.select": "🌐 *Select interface language:*",
+                "lang.en_btn": "🇬🇧 English",
+                "lang.ru_btn": "🇷🇺 Русский",
+            }.get(key, key)
+            mock_get_t.return_value = t
+
+            await bot.cmd_lang(update, ctx)
 
         update.message.reply_text.assert_called_once()
-        msg = update.message.reply_text.call_args[0][0]
-        assert "Usage" in msg or "/lang" in msg
+        call_kwargs = update.message.reply_text.call_args[1]
+        assert "reply_markup" in call_kwargs
+        keyboard = call_kwargs["reply_markup"]
+        # Two buttons in one row
+        assert len(keyboard.inline_keyboard) == 1
+        assert len(keyboard.inline_keyboard[0]) == 2
+        btn_en, btn_ru = keyboard.inline_keyboard[0]
+        assert "English" in btn_en.text
+        assert "Русский" in btn_ru.text
+        assert btn_en.callback_data == "lang_set:en"
+        assert btn_ru.callback_data == "lang_set:ru"
 
     @pytest.mark.asyncio
-    async def test_lang_too_many_arguments_shows_usage(self):
-        """'/lang en ru' with too many arguments shows usage."""
+    async def test_lang_too_many_arguments_shows_keyboard(self):
+        """'/lang en ru' with too many arguments shows the language keyboard."""
         import bot
         update = make_update(chat_id=12345, text="/lang en ru")
         ctx = make_context()
 
-        await bot.cmd_lang(update, ctx)
+        with patch("bot.get_user_translation") as mock_get_t:
+            t = MagicMock()
+            t.side_effect = lambda key, **kw: {
+                "lang.select": "🌐 *Select interface language:*",
+                "lang.en_btn": "🇬🇧 English",
+                "lang.ru_btn": "🇷🇺 Русский",
+            }.get(key, key)
+            mock_get_t.return_value = t
+
+            await bot.cmd_lang(update, ctx)
 
         update.message.reply_text.assert_called_once()
-        msg = update.message.reply_text.call_args[0][0]
-        assert "Usage" in msg or "/lang" in msg
+        call_kwargs = update.message.reply_text.call_args[1]
+        assert "reply_markup" in call_kwargs
 
     @pytest.mark.asyncio
     async def test_lang_invalid_language_shows_error(self):
@@ -802,17 +829,26 @@ class TestLangCommand:
         assert "Unsupported" in msg or "fr" in msg
 
     @pytest.mark.asyncio
-    async def test_lang_empty_message_shows_usage(self):
-        """Empty message text falls through to usage."""
+    async def test_lang_empty_message_shows_keyboard(self):
+        """Empty message text falls through to showing the language keyboard."""
         import bot
         update = make_update(chat_id=12345, text="")
         ctx = make_context()
 
-        await bot.cmd_lang(update, ctx)
+        with patch("bot.get_user_translation") as mock_get_t:
+            t = MagicMock()
+            t.side_effect = lambda key, **kw: {
+                "lang.select": "🌐 *Select interface language:*",
+                "lang.en_btn": "🇬🇧 English",
+                "lang.ru_btn": "🇷🇺 Русский",
+            }.get(key, key)
+            mock_get_t.return_value = t
+
+            await bot.cmd_lang(update, ctx)
 
         update.message.reply_text.assert_called_once()
-        msg = update.message.reply_text.call_args[0][0]
-        assert "Usage" in msg or "/lang" in msg
+        call_kwargs = update.message.reply_text.call_args[1]
+        assert "reply_markup" in call_kwargs
 
     @pytest.mark.asyncio
     async def test_lang_persists_and_get_user_translation_returns_new_lang(self):
@@ -844,6 +880,87 @@ class TestLangCommand:
         # Verify get_user_translation picks it up
         t = bot.get_user_translation(12346)
         assert t.lang == "ru"
+
+    @pytest.mark.asyncio
+    async def test_lang_callback_sets_language_en(self):
+        """Callback with 'lang_set:en' sets language and edits the message."""
+        import bot
+        update = make_update(callback_data="lang_set:en", chat_id=12347)
+        ctx = make_context()
+
+        with patch("bot.set_user_language", return_value="en") as mock_set, \
+             patch("bot.get_user_translation") as mock_get_t:
+            t = MagicMock()
+            t.side_effect = lambda key, **kw: {
+                "lang.set_success": "🌐 Interface language set to *English*",
+            }.get(key, key)
+            mock_get_t.return_value = t
+
+            await bot.lang_callback(update, ctx)
+
+        mock_set.assert_called_once_with(12347, "en")
+        update.callback_query.answer.assert_called_once()
+        update.callback_query.edit_message_text.assert_called_once()
+        msg = update.callback_query.edit_message_text.call_args[0][0]
+        assert "English" in msg
+
+    @pytest.mark.asyncio
+    async def test_lang_callback_sets_language_ru(self):
+        """Callback with 'lang_set:ru' sets language and edits the message."""
+        import bot
+        update = make_update(callback_data="lang_set:ru", chat_id=12348)
+        ctx = make_context()
+
+        with patch("bot.set_user_language", return_value="ru") as mock_set, \
+             patch("bot.get_user_translation") as mock_get_t:
+            t = MagicMock()
+            t.side_effect = lambda key, **kw: {
+                "lang.set_success": "🌐 Язык интерфейса установлен: *Русский*",
+            }.get(key, key)
+            mock_get_t.return_value = t
+
+            await bot.lang_callback(update, ctx)
+
+        mock_set.assert_called_once_with(12348, "ru")
+        update.callback_query.answer.assert_called_once()
+        update.callback_query.edit_message_text.assert_called_once()
+        msg = update.callback_query.edit_message_text.call_args[0][0]
+        assert "Русский" in msg
+
+    @pytest.mark.asyncio
+    async def test_lang_callback_invalid_code_silently_returns(self):
+        """Callback with invalid language code does not crash."""
+        import bot
+        update = make_update(callback_data="lang_set:fr", chat_id=12349)
+        ctx = make_context()
+
+        with patch("bot.set_user_language", side_effect=ValueError(
+            "Unsupported language 'fr'. Supported: en, ru"
+        )) as mock_set:
+            await bot.lang_callback(update, ctx)
+
+        mock_set.assert_called_once_with(12349, "fr")
+        # edit_message_text should NOT be called on error
+        update.callback_query.edit_message_text.assert_not_called()
+
+    def test_build_lang_keyboard_structure(self):
+        """build_lang_keyboard returns a one-row InlineKeyboardMarkup with two buttons."""
+        import bot
+        t = MagicMock()
+        t.side_effect = lambda key, **kw: {
+            "lang.en_btn": "🇬🇧 English",
+            "lang.ru_btn": "🇷🇺 Русский",
+        }.get(key, key)
+
+        keyboard = bot.build_lang_keyboard(t)
+
+        assert len(keyboard.inline_keyboard) == 1
+        assert len(keyboard.inline_keyboard[0]) == 2
+        btn_en, btn_ru = keyboard.inline_keyboard[0]
+        assert btn_en.text == "🇬🇧 English"
+        assert btn_en.callback_data == "lang_set:en"
+        assert btn_ru.text == "🇷🇺 Русский"
+        assert btn_ru.callback_data == "lang_set:ru"
 
 
 # ═══════════════════════ Fallback ═════════════════════════════════════

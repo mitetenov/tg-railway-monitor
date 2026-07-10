@@ -47,6 +47,9 @@
   },
 
   "lang": {
+    "select": "🌐 *Select interface language:*",
+    "en_btn": "🇬🇧 English",
+    "ru_btn": "🇷🇺 Русский",
     "set_success": "🌐 Interface language set to *{language}*"
   },
 
