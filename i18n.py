@@ -220,7 +220,7 @@ def detect_and_store_language(chat_id: int, user=None) -> str:
 
     When a language is already stored in the chat's config file, it is
     returned immediately.  Otherwise the language is inferred from
-    *user*.\ ``language_code`` (the Telegram User object), normalised,
+    *user*. ``language_code`` (the Telegram User object), normalised,
     saved to the persistent config dict, and cached in-memory.
 
     Parameters
@@ -254,6 +254,45 @@ def detect_and_store_language(chat_id: int, user=None) -> str:
     return lang
 
 
+def set_user_language(chat_id: int, lang_code: str) -> str:
+    """Explicitly set the language preference for a user.
+
+    Validates that *lang_code* is a supported language, persists it to
+    the chat's config file, and updates the in-memory cache.
+
+    Parameters
+    ----------
+    chat_id : int
+        Telegram chat ID (used as the persistence key).
+    lang_code : str
+        The language code to set (e.g. ``"en"``, ``"ru"``).
+
+    Returns
+    -------
+    str
+        The normalised supported language code that was stored.
+
+    Raises
+    ------
+    ValueError
+        If *lang_code* is not in ``SUPPORTED_LANGUAGES``.
+    """
+    from config_manager import load_config, save_config  # noqa: PLC0415
+
+    lang = lang_code.lower().split("-")[0]
+    if lang not in SUPPORTED_LANGUAGES:
+        raise ValueError(
+            f"Unsupported language '{lang_code}'. "
+            f"Supported: {', '.join(sorted(SUPPORTED_LANGUAGES))}"
+        )
+
+    config = load_config(chat_id)
+    config["language"] = lang
+    save_config(chat_id, config)
+    _user_lang_cache[chat_id] = lang
+    return lang
+
+
 def get_user_language(chat_id: int, user=None) -> str:
     """Return the stored or detected language for *chat_id*.
 
@@ -281,9 +320,7 @@ def clear_user_lang_cache() -> None:
 # ═══════════════════ Station name translation ═════════════════════
 
 
-def translate_station_name(
-    code: int, lang: str = "en", fallback: str | None = None
-) -> str:
+def translate_station_name(code: int, lang: str = "en", fallback: Optional[str] = None) -> str:
     """Return a station name localised to *lang*.
 
     Parameters
@@ -293,25 +330,23 @@ def translate_station_name(
     lang : str
         Target language code (``"en"``, ``"ru"``, ``"ka"``).
         Falls back to English for unknown languages.
-    fallback : str | None
-        Optional override returned when no translation exists for
-        *code* in any language.  When ``None`` (the default) the
-        string representation of *code* is used instead, preserving
-        the original behaviour.
+    fallback : str or None
+        Optional fallback name (e.g. the API's ``stationName``) used
+        when no hardcoded translation exists.  When ``None`` the
+        string representation of *code* is used instead.
 
     Returns
     -------
     str
-        The station name in the requested language, or *fallback*
-        when provided, or the string representation of *code* when
-        no translation is available and no fallback was given.
+        The station name in the requested language, or *fallback* /
+        *code* when no translation is available.
     """
     from stations import STATION_NAMES, STATION_NAMES_RU, STATION_NAMES_KA  # noqa: PLC0415
 
-    default = str(code) if fallback is None else fallback
+    code_fallback = fallback if fallback is not None else str(code)
     if lang == "ru":
-        return STATION_NAMES_RU.get(code, STATION_NAMES.get(code, default))
+        return STATION_NAMES_RU.get(code, STATION_NAMES.get(code, code_fallback))
     if lang == "ka":
-        return STATION_NAMES_KA.get(code, STATION_NAMES.get(code, default))
+        return STATION_NAMES_KA.get(code, STATION_NAMES.get(code, code_fallback))
     # Default: English
-    return STATION_NAMES.get(code, default)
+    return STATION_NAMES.get(code, code_fallback)

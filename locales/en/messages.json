@@ -46,6 +46,10 @@
     "stop_cancel_btn": "↩️ No, keep monitoring"
   },
 
+  "lang": {
+    "set_success": "🌐 Interface language set to *{language}*"
+  },
+
   "stop": {
     "stopped": "🛑 Monitoring stopped and configuration cleared.\nUse /start to set up again."
   },

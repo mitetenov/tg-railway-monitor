@@ -71,6 +71,9 @@ class TestConfigManagerNegative:
     @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
     def test_save_to_readonly_raises(self):
         """If the file is read-only, save should raise RuntimeError."""
+        import os as _os
+        if _os.geteuid() == 0:
+            pytest.skip("Root can write to read-only files")
         chat_id = 50010
         path = cm._config_path(chat_id)
         # Create a read-only file
