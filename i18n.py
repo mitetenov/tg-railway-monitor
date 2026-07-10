@@ -220,7 +220,7 @@ def detect_and_store_language(chat_id: int, user=None) -> str:
 
     When a language is already stored in the chat's config file, it is
     returned immediately.  Otherwise the language is inferred from
-    *user*.\ ``language_code`` (the Telegram User object), normalised,
+    *user*. ``language_code`` (the Telegram User object), normalised,
     saved to the persistent config dict, and cached in-memory.
 
     Parameters
