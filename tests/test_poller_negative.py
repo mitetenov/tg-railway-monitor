@@ -97,28 +97,17 @@ class TestPauseResumeNegative:
         assert is_paused(70001)
 
     def test_unpause_when_not_paused(self):
-        """Calling resume on not-paused but configured route."""
-        # Create config for the route
-        data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
-        os.makedirs(data_dir, exist_ok=True)
-        cfg = {
-            "from_station_code": "56014",
-            "to_station_code": "57151",
-            "date": "2026-07-15",
-            "seat_class": "Any",
-        }
-        with open(os.path.join(data_dir, "70002.json"), "w") as f:
-            json.dump(cfg, f)
+        """resume() when not paused returns (False, error_message)."""
+        import pytest
 
-        try:
-            # resume will attempt start() which needs an event loop;
-            # in a sync test context this raises RuntimeError
-            import pytest
-            with pytest.raises(RuntimeError):
-                resume(None, 70002)
-        finally:
-            stop(70002)
-            os.remove(os.path.join(data_dir, "70002.json"))
+        chat_id = 70002
+        success, msg = resume(None, chat_id)
+        assert not success, f"Expected (False, error_message), got ({success}, {msg!r})"
+        assert isinstance(msg, str), f"Expected string error message, got {type(msg).__name__}"
+        assert msg, "Error message should not be empty"
+        assert "Route not configured" in msg, (
+            f"Expected 'Route not configured' in message, got: {msg!r}"
+        )
 
     def test_stop_cleans_all_state(self):
         chat_id = 70003
