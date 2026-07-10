@@ -68,6 +68,7 @@ class TestConfigManagerNegative:
 
     # ── Save errors ─────────────────────────────────────────────────────
 
+    @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
     def test_save_to_readonly_raises(self):
         """If the file is read-only, save should raise RuntimeError."""
         chat_id = 50010
