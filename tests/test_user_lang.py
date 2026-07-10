@@ -10,6 +10,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from i18n import (
+    SUPPORTED_LANGUAGES,
     Translation,
     _normalize_lang,
     clear_cache,
@@ -18,6 +19,7 @@ from i18n import (
     get_translation,
     get_user_language,
     get_user_translation,
+    set_user_language,
 )
 
 
@@ -159,6 +161,111 @@ class TestDetectAndStoreLanguage:
         clear_user_lang_cache()
         lang = detect_and_store_language(12352, FakeUser("ru"))
         assert lang == "ru"  # re-detected
+
+
+# ═══════════════════════ set_user_language ═════════════════════════════
+
+
+class TestSetUserLanguage:
+    def _mock_config_dir(self) -> str:
+        import config_manager  # noqa: PLC0415
+
+        d = tempfile.mkdtemp()
+        config_manager.DATA_DIR = d
+        return d
+
+    def setup_method(self):
+        clear_user_lang_cache()
+
+    def test_sets_english(self):
+        """Explicitly set language to en."""
+        self._mock_config_dir()
+        lang = set_user_language(12301, "en")
+        assert lang == "en"
+        assert get_user_language(12301) == "en"
+
+    def test_sets_russian(self):
+        """Explicitly set language to ru."""
+        self._mock_config_dir()
+        lang = set_user_language(12302, "ru")
+        assert lang == "ru"
+        assert get_user_language(12302) == "ru"
+
+    def test_accepts_regional_variant(self):
+        """en-US normalises to en."""
+        self._mock_config_dir()
+        lang = set_user_language(12303, "en-US")
+        assert lang == "en"
+
+    def test_raises_on_unsupported(self):
+        """Raises ValueError for languages not in SUPPORTED_LANGUAGES."""
+        self._mock_config_dir()
+        with pytest.raises(ValueError, match="Unsupported"):
+            set_user_language(12304, "fr")
+
+    def test_raises_on_unsupported_regional(self):
+        """Raises ValueError for unsupported regional variants."""
+        self._mock_config_dir()
+        with pytest.raises(ValueError):
+            set_user_language(12305, "de-DE")
+
+    def test_persists_to_config(self):
+        """Language is written to the persistent config file."""
+        data_dir = self._mock_config_dir()
+        set_user_language(12306, "ru")
+
+        path = os.path.join(data_dir, "12306.json")
+        assert os.path.isfile(path)
+        with open(path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert config.get("language") == "ru"
+
+    def test_updates_in_memory_cache(self):
+        """After set_user_language, the cache returns the new value."""
+        self._mock_config_dir()
+        set_user_language(12307, "ru")
+        assert get_user_language(12307) == "ru"
+
+        set_user_language(12307, "en")
+        assert get_user_language(12307) == "en"
+
+    def test_cache_survives_all_supported_languages(self):
+        """set_user_language works for every supported language."""
+        self._mock_config_dir()
+        for lang_code in SUPPORTED_LANGUAGES:
+            clear_user_lang_cache()
+            result = set_user_language(12308, lang_code)
+            assert result == lang_code
+            assert get_user_language(12308) == lang_code
+
+    def test_coexists_with_existing_config(self):
+        """Language key is added alongside existing config keys."""
+        data_dir = self._mock_config_dir()
+
+        # Pre-existing config with monitoring data
+        path = os.path.join(data_dir, "12309.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({
+                "from_station": "Tbilisi",
+                "to_station": "Batumi",
+                "date": "2026-07-15",
+                "seat_class": "Any",
+            }, f)
+
+        set_user_language(12309, "ru")
+
+        with open(path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert config["from_station"] == "Tbilisi"
+        assert config["date"] == "2026-07-15"
+        assert config["language"] == "ru"
+
+    def test_get_user_translation_picks_up_change(self):
+        """After set_user_language, get_user_translation returns new language."""
+        self._mock_config_dir()
+        set_user_language(12310, "ru")
+        t = get_user_translation(12310)
+        assert t.lang == "ru"
 
 
 # ═══════════════════════ get_user_language ════════════════════════════

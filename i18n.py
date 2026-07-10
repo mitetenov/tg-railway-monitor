@@ -254,6 +254,45 @@ def detect_and_store_language(chat_id: int, user=None) -> str:
     return lang
 
 
+def set_user_language(chat_id: int, lang_code: str) -> str:
+    """Explicitly set the language preference for a user.
+
+    Validates that *lang_code* is a supported language, persists it to
+    the chat's config file, and updates the in-memory cache.
+
+    Parameters
+    ----------
+    chat_id : int
+        Telegram chat ID (used as the persistence key).
+    lang_code : str
+        The language code to set (e.g. ``"en"``, ``"ru"``).
+
+    Returns
+    -------
+    str
+        The normalised supported language code that was stored.
+
+    Raises
+    ------
+    ValueError
+        If *lang_code* is not in ``SUPPORTED_LANGUAGES``.
+    """
+    from config_manager import load_config, save_config  # noqa: PLC0415
+
+    lang = lang_code.lower().split("-")[0]
+    if lang not in SUPPORTED_LANGUAGES:
+        raise ValueError(
+            f"Unsupported language '{lang_code}'. "
+            f"Supported: {', '.join(sorted(SUPPORTED_LANGUAGES))}"
+        )
+
+    config = load_config(chat_id)
+    config["language"] = lang
+    save_config(chat_id, config)
+    _user_lang_cache[chat_id] = lang
+    return lang
+
+
 def get_user_language(chat_id: int, user=None) -> str:
     """Return the stored or detected language for *chat_id*.
 

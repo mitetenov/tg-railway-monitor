@@ -7,6 +7,7 @@ flows without a real Telegram connection.
 import json
 import os
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -707,6 +708,142 @@ class TestStopCommand:
             text = update.message.reply_text.call_args[0][0]
             # Should contain the stop message from i18n
             assert "stopped" in text.lower() or "остановлен" in text.lower()
+
+
+# ═══════════════════════ /lang Command ═════════════════════════════════
+
+
+class TestLangCommand:
+
+    @pytest.mark.asyncio
+    async def test_lang_en_sets_english(self):
+        """'/lang en' calls set_user_language and sends confirmation in English."""
+        import bot
+        update = make_update(chat_id=12345, text="/lang en")
+        ctx = make_context()
+
+        with patch("bot.set_user_language", return_value="en") as mock_set, \
+             patch("bot.get_user_translation") as mock_get_t:
+            t = MagicMock()
+            t.side_effect = lambda key, **kw: {
+                "lang.set_success": "🌐 Interface language set to *English*",
+            }.get(key, key)
+            mock_get_t.return_value = t
+
+            await bot.cmd_lang(update, ctx)
+
+            mock_set.assert_called_once_with(12345, "en")
+            mock_get_t.assert_called_once_with(12345, update.effective_user)
+            update.message.reply_text.assert_called_once()
+            msg = update.message.reply_text.call_args[0][0]
+            assert "English" in msg
+
+    @pytest.mark.asyncio
+    async def test_lang_ru_sets_russian(self):
+        """'/lang ru' calls set_user_language and sends confirmation in Russian."""
+        import bot
+        update = make_update(chat_id=12345, text="/lang ru")
+        ctx = make_context()
+
+        with patch("bot.set_user_language", return_value="ru") as mock_set, \
+             patch("bot.get_user_translation") as mock_get_t:
+            t = MagicMock()
+            t.side_effect = lambda key, **kw: {
+                "lang.set_success": "🌐 Язык интерфейса установлен: *Русский*",
+            }.get(key, key)
+            mock_get_t.return_value = t
+
+            await bot.cmd_lang(update, ctx)
+
+            mock_set.assert_called_once_with(12345, "ru")
+            msg = update.message.reply_text.call_args[0][0]
+            assert "Русский" in msg
+
+    @pytest.mark.asyncio
+    async def test_lang_no_argument_shows_usage(self):
+        """'/lang' with no argument shows usage message."""
+        import bot
+        update = make_update(chat_id=12345, text="/lang")
+        ctx = make_context()
+
+        await bot.cmd_lang(update, ctx)
+
+        update.message.reply_text.assert_called_once()
+        msg = update.message.reply_text.call_args[0][0]
+        assert "Usage" in msg or "/lang" in msg
+
+    @pytest.mark.asyncio
+    async def test_lang_too_many_arguments_shows_usage(self):
+        """'/lang en ru' with too many arguments shows usage."""
+        import bot
+        update = make_update(chat_id=12345, text="/lang en ru")
+        ctx = make_context()
+
+        await bot.cmd_lang(update, ctx)
+
+        update.message.reply_text.assert_called_once()
+        msg = update.message.reply_text.call_args[0][0]
+        assert "Usage" in msg or "/lang" in msg
+
+    @pytest.mark.asyncio
+    async def test_lang_invalid_language_shows_error(self):
+        """'/lang fr' with unsupported language shows error."""
+        import bot
+        update = make_update(chat_id=12345, text="/lang fr")
+        ctx = make_context()
+
+        with patch("bot.set_user_language", side_effect=ValueError(
+            "Unsupported language 'fr'. Supported: en, ru"
+        )):
+            await bot.cmd_lang(update, ctx)
+
+        update.message.reply_text.assert_called_once()
+        msg = update.message.reply_text.call_args[0][0]
+        assert "Unsupported" in msg or "fr" in msg
+
+    @pytest.mark.asyncio
+    async def test_lang_empty_message_shows_usage(self):
+        """Empty message text falls through to usage."""
+        import bot
+        update = make_update(chat_id=12345, text="")
+        ctx = make_context()
+
+        await bot.cmd_lang(update, ctx)
+
+        update.message.reply_text.assert_called_once()
+        msg = update.message.reply_text.call_args[0][0]
+        assert "Usage" in msg or "/lang" in msg
+
+    @pytest.mark.asyncio
+    async def test_lang_persists_and_get_user_translation_returns_new_lang(self):
+        """After /lang ru, get_user_translation reflects the change."""
+        import bot
+        from i18n import clear_user_lang_cache
+
+        # Use a temp config dir for real persistence
+        import config_manager
+        data_dir = tempfile.mkdtemp()
+        config_manager.DATA_DIR = data_dir
+        clear_user_lang_cache()
+
+        update = make_update(chat_id=12346, text="/lang ru")
+        ctx = make_context()
+
+        await bot.cmd_lang(update, ctx)
+
+        msg = update.message.reply_text.call_args[0][0]
+        assert "Русский" in msg
+
+        # Verify config file was written
+        path = os.path.join(data_dir, "12346.json")
+        assert os.path.isfile(path)
+        with open(path, encoding="utf-8") as f:
+            config = json.load(f)
+        assert config.get("language") == "ru"
+
+        # Verify get_user_translation picks it up
+        t = bot.get_user_translation(12346)
+        assert t.lang == "ru"
 
 
 # ═══════════════════════ Fallback ═════════════════════════════════════

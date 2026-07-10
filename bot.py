@@ -24,7 +24,13 @@ from telegram.ext import (
 import poller
 from api import get_stations
 from config_manager import delete_config, load_config, is_config_complete, save_config
-from i18n import get_user_language, get_user_translation, translate_station_name
+from i18n import (
+    SUPPORTED_LANGUAGES,
+    get_user_language,
+    get_user_translation,
+    set_user_language,
+    translate_station_name,
+)
 from stations import FALLBACK_STATIONS, STATION_SLUGS
 
 logging.basicConfig(
@@ -491,6 +497,45 @@ async def _wizard_cancel(update: Update) -> int:
     return ConversationHandler.END
 
 
+# ═══════════════════════ /lang Command ════════════════════════════════
+
+async def cmd_lang(update: Update, context) -> None:
+    """Set the user's interface language: /lang en or /lang ru."""
+    chat_id = update.effective_chat.id
+
+    # Parse the language code from the command text
+    try:
+        args = (update.message.text or "").strip().split()
+        if len(args) != 2:
+            raise ValueError
+        requested = args[1]
+    except (ValueError, IndexError):
+        supported_list = ", ".join(sorted(SUPPORTED_LANGUAGES))
+        await update.message.reply_text(
+            f"⚠️ Usage: /lang <code>\n"
+            f"Supported: {supported_list}\n"
+            f"Examples: /lang en, /lang ru"
+        )
+        return
+
+    try:
+        new_lang = set_user_language(chat_id, requested)
+    except ValueError:
+        supported_list = ", ".join(sorted(SUPPORTED_LANGUAGES))
+        await update.message.reply_text(
+            f"❌ Unsupported language '{requested}'.\n"
+            f"Supported: {supported_list}"
+        )
+        return
+
+    # Switch to the new language for the response
+    t = get_user_translation(chat_id, update.effective_user)
+    language_name = "English" if new_lang == "en" else "Русский"
+    await update.message.reply_text(
+        t("lang.set_success", language=language_name)
+    )
+
+
 # ═══════════════════════ /stop Command ════════════════════════════════
 
 async def cmd_stop(update: Update, _context) -> None:
@@ -527,6 +572,7 @@ async def post_init(application: Application) -> None:
         [
             BotCommand("start", "Start ticket monitoring setup wizard"),
             BotCommand("stop", "Stop monitoring and clear configuration"),
+            BotCommand("lang", "Set interface language (en / ru)"),
         ]
     )
     logger.info("Bot commands registered with Telegram API")
@@ -554,6 +600,9 @@ def main() -> None:
 
     # ── /stop ──
     app.add_handler(CommandHandler("stop", cmd_stop))
+
+    # ── /lang ──
+    app.add_handler(CommandHandler("lang", cmd_lang))
 
     # ── Fallback ──
     app.add_handler(MessageHandler(filters.COMMAND, fallback_handler))
