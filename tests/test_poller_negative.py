@@ -166,6 +166,15 @@ class TestStateMemory:
 class TestCheckAndNotifyNegative:
     """Mock _check_and_notify internals to test edge cases."""
 
+    def setup_method(self):
+        """Clean global state before each test."""
+        from poller import _state, _paused, _running_tasks
+        _state.clear()
+        _paused.clear()
+        for cid in list(_running_tasks.keys()):
+            from poller import stop
+            stop(cid)
+
     SAMPLE_EMPTY = {
         "isAnyDepartureTripAvailable": False,
         "departureAvailableRides": [],
