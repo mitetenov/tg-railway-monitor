@@ -822,28 +822,34 @@ class TestLangCommand:
 
         # Use a temp config dir for real persistence
         import config_manager
+        _saved_data_dir = config_manager.DATA_DIR
         data_dir = tempfile.mkdtemp()
         config_manager.DATA_DIR = data_dir
         clear_user_lang_cache()
 
-        update = make_update(chat_id=12346, text="/lang ru")
-        ctx = make_context()
+        try:
+            update = make_update(chat_id=12346, text="/lang ru")
+            ctx = make_context()
 
-        await bot.cmd_lang(update, ctx)
+            await bot.cmd_lang(update, ctx)
 
-        msg = update.message.reply_text.call_args[0][0]
-        assert "Русский" in msg
+            msg = update.message.reply_text.call_args[0][0]
+            assert "Русский" in msg
 
-        # Verify config file was written
-        path = os.path.join(data_dir, "12346.json")
-        assert os.path.isfile(path)
-        with open(path, encoding="utf-8") as f:
-            config = json.load(f)
-        assert config.get("language") == "ru"
+            # Verify config file was written
+            path = os.path.join(data_dir, "12346.json")
+            assert os.path.isfile(path)
+            with open(path, encoding="utf-8") as f:
+                config = json.load(f)
+            assert config.get("language") == "ru"
 
-        # Verify get_user_translation picks it up
-        t = bot.get_user_translation(12346)
-        assert t.lang == "ru"
+            # Verify get_user_translation picks it up
+            t = bot.get_user_translation(12346)
+            assert t.lang == "ru"
+        finally:
+            config_manager.DATA_DIR = _saved_data_dir
+            import shutil
+            shutil.rmtree(data_dir, ignore_errors=True)
 
 
 # ═══════════════════════ Fallback ═════════════════════════════════════

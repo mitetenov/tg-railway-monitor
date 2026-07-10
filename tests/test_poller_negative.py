@@ -166,15 +166,6 @@ class TestStateMemory:
 class TestCheckAndNotifyNegative:
     """Mock _check_and_notify internals to test edge cases."""
 
-    def setup_method(self):
-        """Clean global state before each test."""
-        from poller import _state, _paused, _running_tasks
-        _state.clear()
-        _paused.clear()
-        for cid in list(_running_tasks.keys()):
-            from poller import stop
-            stop(cid)
-
     SAMPLE_EMPTY = {
         "isAnyDepartureTripAvailable": False,
         "departureAvailableRides": [],
@@ -229,6 +220,13 @@ class TestCheckAndNotifyNegative:
     }
 
     def setup_method(self):
+        """Clean global state and prepare data directory before each test."""
+        # Reset poller global state between tests to prevent flaky cross-test leaks
+        _state.clear()
+        _paused.clear()
+        for cid in list(_running_tasks.keys()):
+            stop(cid)
+
         self.data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
         os.makedirs(self.data_dir, exist_ok=True)
         for cid in list(_state.keys()):
