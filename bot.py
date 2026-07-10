@@ -180,6 +180,17 @@ def build_class_keyboard(t) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+def build_lang_keyboard(t) -> InlineKeyboardMarkup:
+    """Return a one-row inline keyboard listing supported languages."""
+    keyboard = [
+        [
+            InlineKeyboardButton(t("lang.en_btn"), callback_data="lang_set:en"),
+            InlineKeyboardButton(t("lang.ru_btn"), callback_data="lang_set:ru"),
+        ],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
 # ── Conversation states ──────────────────────────────────────────────
 (DATE_SELECT, WAITING_CUSTOM_DATE, DEPARTURE_SELECT, ARRIVAL_SELECT, CLASS_SELECT) = range(5)
 
@@ -500,7 +511,11 @@ async def _wizard_cancel(update: Update) -> int:
 # ═══════════════════════ /lang Command ════════════════════════════════
 
 async def cmd_lang(update: Update, context) -> None:
-    """Set the user's interface language: /lang en or /lang ru."""
+    """Set the user's interface language: /lang en or /lang ru.
+
+    When no argument is given an inline keyboard with supported languages
+    is shown instead of a plain usage message.
+    """
     chat_id = update.effective_chat.id
 
     # Parse the language code from the command text
@@ -510,11 +525,12 @@ async def cmd_lang(update: Update, context) -> None:
             raise ValueError
         requested = args[1]
     except (ValueError, IndexError):
-        supported_list = ", ".join(sorted(SUPPORTED_LANGUAGES))
+        t = get_user_translation(chat_id, update.effective_user)
+        keyboard = build_lang_keyboard(t)
         await update.message.reply_text(
-            f"⚠️ Usage: /lang <code>\n"
-            f"Supported: {supported_list}\n"
-            f"Examples: /lang en, /lang ru"
+            t("lang.select"),
+            parse_mode="Markdown",
+            reply_markup=keyboard,
         )
         return
 
@@ -533,6 +549,28 @@ async def cmd_lang(update: Update, context) -> None:
     language_name = "English" if new_lang == "en" else "Русский"
     await update.message.reply_text(
         t("lang.set_success", language=language_name)
+    )
+
+
+async def lang_callback(update: Update, _context) -> None:
+    """Handle inline keyboard language selection (callback_data='lang_set:en' etc.)."""
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = update.effective_chat.id
+    lang_code = query.data.split(":")[1]  # "lang_set:en" → "en"
+
+    try:
+        new_lang = set_user_language(chat_id, lang_code)
+    except ValueError:
+        # Shouldn't happen for buttons we generated, but be safe
+        return
+
+    t = get_user_translation(chat_id, update.effective_user)
+    language_name = "English" if new_lang == "en" else "Русский"
+    await query.edit_message_text(
+        t("lang.set_success", language=language_name),
+        parse_mode="Markdown",
     )
 
 
@@ -603,6 +641,7 @@ def main() -> None:
 
     # ── /lang ──
     app.add_handler(CommandHandler("lang", cmd_lang))
+    app.add_handler(CallbackQueryHandler(lang_callback, pattern=r"^lang_set:"))
 
     # ── Fallback ──
     app.add_handler(MessageHandler(filters.COMMAND, fallback_handler))
