@@ -5,6 +5,63 @@ API Key: `7d8d34d1-e9af-4897-9f0f-5c36c179be77` (public key, embedded in Next.js
 
 All endpoints require `api_key` as a query parameter. All requests are `GET`. Responses are JSON. All endpoints are **public** (no authentication beyond the hard-coded key).
 
+## Codebase Architecture
+
+The API client code uses a **factory + abstract base class** pattern for extensibility:
+
+### TicketApi ABC (`_api_base.py`)
+
+`TicketApi` is an abstract base class defining 5 methods that every ticket provider must implement:
+
+| Method                       | Purpose                                         |
+|------------------------------|-------------------------------------------------|
+| `get_stations(session)`      | Fetch list of railway stations                  |
+| `search_trips(session, from, to, date)` | Search available rides on a route    |
+| `get_availability_calendar(session, from, to)` | Multi-day availability calendar |
+| `get_seats(session, ride_id)` | Per-ride seat maps (stub — raises NotImplementedError) |
+| `get_prices(session, ride_id)` | Standalone pricing (stub — raises NotImplementedError) |
+
+### TreGeApi (`api_tre.py`)
+
+`TreGeApi(TicketApi)` is the concrete implementation for the tre.ge backend. It:
+
+- Implements the 3 core REST endpoints (stations, rides, calendar)
+- Raises `NotImplementedError` for `get_seats()`/`get_prices()` (no public endpoints for these)
+- Provides `build_purchase_url(from_code, to_code, date)` — generates a tre.ge purchase link
+- Includes station slug mapping helpers (`station_to_slug`, `slug_to_station`)
+
+### Factory (`api.py`)
+
+`api.py` provides the factory layer and backward-compat aliases:
+
+- `get_ticket_api(source=None)` — factory function; resolves `source` from the `TICKET_SOURCE` environment variable (default `"trege"`), instantiates the matching `TicketApi` class, and caches the result as a module-level singleton.
+- `init_ticket_api(source=None)` — explicit startup initializer (called from `bot.post_init`).
+- **Backward-compatible module-level aliases** — `get_stations()`, `get_available_rides()`, `get_availability_calendar()` delegate to the cached singleton so existing callers (`poller.py`, `bot.py`) work unchanged.
+
+### How components connect
+
+```
+poller.py / bot.py
+      │
+      ▼ call backward-compat alias
+api.py (get_stations / get_available_rides / ...)
+      │
+      ▼ delegate to cached singleton
+TreGeApi (api_tre.py)  ←── implements TicketApi (_api_base.py)
+      │
+      ▼ HTTP via aiohttp
+tkt.ge REST API
+```
+
+### Constants
+
+Defined in `_api_base.py` and shared across all implementations:
+
+```python
+API_BASE = "https://gateway.tkt.ge/integrations/api/GeorgianRailway"
+API_KEY  = "7d8d34d1-e9af-4897-9f0f-5c36c179be77"
+```
+
 ---
 
 ## 1. Stations Dictionary
@@ -75,9 +132,10 @@ The API returns ~36 stations total. Station names use Latin transliteration in t
 **Used by:** `bot.py` — populates station selection keyboard on bot startup. Falls back to a hardcoded list if the API call fails.
 
 **Source files:**
-- `api.py:27` — `get_stations()` async wrapper
+- `api.py:101` — `get_stations()` async alias (delegates to ``TreGeApi.get_stations()``)
+- `api_tre.py:166` — `TreGeApi.get_stations()` (actual implementation)
 - `api_explorer.py:51` — `get_stations()` sync wrapper
-- `bot.py:67` — `load_stations()` startup cache
+- `bot.py:57` — `load_stations()` startup cache
 
 ---
 
@@ -197,7 +255,8 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/availabilit
 **Used by:** `api_explorer.py:66` — `get_availability_calendar()` (exploratory tool only, not used in production monitor/bot).
 
 **Source files:**
-- `api.py:58` — `get_availability_calendar()` async wrapper
+- `api.py:119` — `get_availability_calendar()` async alias (delegates to ``TreGeApi.get_availability_calendar()``)
+- `api_tre.py:199` — `TreGeApi.get_availability_calendar()` (actual implementation)
 - `api_explorer.py:66` — `get_availability_calendar()` sync wrapper
 
 ---
@@ -330,16 +389,35 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/available-r
 | 2  | II Class | 🪑   |
 | 5  | Business | ⭐   |
 
+
+### Python API method: `search_trips()`
+
+The primary Python entry point for this endpoint is `TreGeApi.search_trips()` (`api_tre.py:171`):
+
+```python
+async def search_trips(
+    self,
+    session: aiohttp.ClientSession,
+    from_code: str,
+    to_code: str,
+    date_str: str,
+    passengers: int = 1,
+) -> Optional[dict]:
+```
+
+For backward compatibility, `api.get_available_rides()` (`api.py:107`) is a module-level alias that delegates to `api.search_trips()`. Existing callers (`poller.py`, `bot.py`) use this alias and continue to work unchanged.
 **Used by:** This is the core endpoint used for monitoring.
-- `api.py:31` — `get_available_rides()` async wrapper (used by `poller.py` and `bot.py`)
+- `api.py:107` — `get_available_rides()` backward-compat alias (delegates to ``TreGeApi.search_trips()``)
+- `api_tre.py:171` — `TreGeApi.search_trips()` (actual implementation for tre.ge)
 - `ticket_monitor.py:381` — `_fetch_rides()` using `urllib` (standalone monitor, no dependencies)
 - `api_explorer.py:90` — `get_available_rides()` sync wrapper (exploratory)
-- `poller.py:31` — `_check_and_notify()` calls the async wrapper
+- `poller.py:55` — `_check_and_notify()` calls the async alias
 
 **Source files:**
-- `api.py:31` — async wrapper via aiohttp
+- `api.py:107` — `get_available_rides()` alias wrapping ``search_trips()``
+- `api_tre.py:171` — `TreGeApi.search_trips()` (primary implementation)
 - `ticket_monitor.py:381` — sync wrapper via urllib (zero-dependency monitor)
-- `poller.py:46` — async call via aiohttp (Telegram bot poller)
+- `poller.py:55` — async call via aiohttp (Telegram bot poller)
 - `api_explorer.py:90` — sync wrapper via curl subprocess
 
 ---
@@ -348,7 +426,9 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/available-r
 
 | Component         | Endpoint(s) Used               | Library     |
 |-------------------|--------------------------------|-------------|
-| `api.py`          | Stations, Calendar, Rides      | aiohttp     |
+| `api_tre.py`      | Stations, Rides, Calendar      | aiohttp     |
+| `api.py`          | Factory + backward-compat layer | aiohttp    |
+| `_api_base.py`    | Constants + TicketApi ABC       | aiohttp     |
 | `ticket_monitor.py` | Rides only                   | urllib      |
 | `poller.py`       | Rides only                     | aiohttp     |
 | `bot.py`          | Stations (cached at startup)   | aiohttp     |
@@ -356,7 +436,7 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/available-r
 
 ## API Quirks & Notes
 
-1. **Station name inconsistency:** The dictionary endpoint (`/Dictionaries/civil-stations`) returns station names in **Latin transliteration** (e.g., `"Batumi (batumi ( samg))"`), while the availability endpoints return names in **Georgian script** (e.g., `"ბათუმი"`). The codebase uses a hardcoded `STATION_NAMES` dict as the canonical mapping.
+1. **Station name inconsistency:** The dictionary endpoint (`/Dictionaries/civil-stations`) returns station names in **Latin transliteration** (e.g., `"Batumi (batumi ( samg))"`), while the availability endpoints return names in **Georgian script** (e.g., `"ბათუმი"`). The codebase uses `stations.py` as the single source of truth for station data with multi-language names.
 
 2. **Typo in API:** The calendar endpoint returns fields named `toDestionation` and `fromDestionation` — "Destination" is misspelled (missing letter 'a'). This is the actual API response, not a codebase typo.
 
@@ -364,6 +444,6 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/available-r
 
 4. **API key is public:** The key `7d8d34d1-e9af-4897-9f0f-5c36c179be77` is hard-coded in the Next.js frontend source. It's not a secret — treat as a public client-side key.
 
-5. **Timeout configuration:** The async wrapper (`api.py`) uses a 15-second timeout. The sync wrapper (`ticket_monitor.py`) uses 30 seconds.
+5. **Timeout configuration:** `TreGeApi.fetch_json()` (`api_tre.py:118`) uses a 15-second aiohttp timeout. The standalone `ticket_monitor.py` uses a 30-second timeout for urllib requests.
 
 6. **Backend base URL:** All requests go through `gateway.tkt.ge` (not directly to a railway API). The path prefix is `/integrations/api/GeorgianRailway`.
