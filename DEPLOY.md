@@ -1,4 +1,4 @@
-# tkt.ge Telegram Ticket Monitor — Deployment
+# tre.ge Telegram Ticket Monitor — Deployment
 
 ## 🐳 Docker (рекомендуемый способ)
 
