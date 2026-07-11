@@ -134,8 +134,8 @@ The API returns ~36 stations total. Station names use Latin transliteration in t
 **Source files:**
 - `api.py:101` — `get_stations()` async alias (delegates to ``TreGeApi.get_stations()``)
 - `api_tre.py:166` — `TreGeApi.get_stations()` (actual implementation)
-- `api_explorer.py:51` — `get_stations()` sync wrapper
-- `bot.py:57` — `load_stations()` startup cache
+|- `api_explorer.py:30` — `get_stations()` sync wrapper
+|- `bot.py:57` — `load_stations()` startup cache
 
 ---
 
@@ -192,10 +192,10 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/availabilit
 
 **Note:** `duration` is a fixed approximate value per route, not the actual ride duration from the timetable.
 
-**Used by:** `api_explorer.py:129` — `get_popular_routes()` (exploratory tool only, not used in production monitor/bot).
+**Used by:** `api_explorer.py:108` — `get_popular_routes()` (exploratory tool only, not used in production monitor/bot).
 
 **Source files:**
-- `api_explorer.py:129` — `get_popular_routes()`
+|- `api_explorer.py:108` — `get_popular_routes()`
 
 ---
 
@@ -252,12 +252,12 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/availabilit
 - Field names have a typo: "Destionation" instead of "Destination" (missing 'a'). This is the actual API response.
 - `date` values may omit timezone information (unlike `available-rides` which uses `Z` suffix).
 
-**Used by:** `api_explorer.py:66` — `get_availability_calendar()` (exploratory tool only, not used in production monitor/bot).
+**Used by:** `api_explorer.py:45` — `get_availability_calendar()` (exploratory tool only, not used in production monitor/bot).
 
 **Source files:**
 - `api.py:119` — `get_availability_calendar()` async alias (delegates to ``TreGeApi.get_availability_calendar()``)
 - `api_tre.py:199` — `TreGeApi.get_availability_calendar()` (actual implementation)
-- `api_explorer.py:66` — `get_availability_calendar()` sync wrapper
+|- `api_explorer.py:45` — `get_availability_calendar()` sync wrapper
 
 ---
 
@@ -405,20 +405,20 @@ async def search_trips(
 ) -> Optional[dict]:
 ```
 
-For backward compatibility, `api.get_available_rides()` (`api.py:107`) is a module-level alias that delegates to `api.search_trips()`. Existing callers (`poller.py`, `bot.py`) use this alias and continue to work unchanged.
+For backward compatibility, `api.get_available_rides()` (`api.py:107`) is a module-level alias that delegates to `TreGeApi.search_trips()` via the cached API singleton. Existing callers (`poller.py`, `bot.py`) use this alias and continue to work unchanged.
 **Used by:** This is the core endpoint used for monitoring.
 - `api.py:107` — `get_available_rides()` backward-compat alias (delegates to ``TreGeApi.search_trips()``)
 - `api_tre.py:171` — `TreGeApi.search_trips()` (actual implementation for tre.ge)
 - `ticket_monitor.py:381` — `_fetch_rides()` using `urllib` (standalone monitor, no dependencies)
-- `api_explorer.py:90` — `get_available_rides()` sync wrapper (exploratory)
-- `poller.py:55` — `_check_and_notify()` calls the async alias
+|- `api_explorer.py:69` — `get_available_rides()` sync wrapper (exploratory)
+|- `poller.py:55` — `_check_and_notify()` calls the async alias
 
 **Source files:**
 - `api.py:107` — `get_available_rides()` alias wrapping ``search_trips()``
 - `api_tre.py:171` — `TreGeApi.search_trips()` (primary implementation)
 - `ticket_monitor.py:381` — sync wrapper via urllib (zero-dependency monitor)
 - `poller.py:55` — async call via aiohttp (Telegram bot poller)
-- `api_explorer.py:90` — sync wrapper via curl subprocess
+|- `api_explorer.py:69` — sync wrapper via curl subprocess
 
 ---
 
