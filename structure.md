@@ -1,6 +1,6 @@
 # Структура проекта `tg-ticket-monitor`
 
-**Назначение:** Telegram-бот для мониторинга наличия железнодорожных билетов на сайте tkt.ge (Грузинская железная дорога). Бот позволяет через Telegram-команды настроить маршрут, дату и класс, после чего автоматически опрашивает API и отправляет уведомления при появлении новых билетов или увеличении свободных мест.
+**Назначение:** Telegram-бот для мониторинга наличия железнодорожных билетов на сайте tre.ge (Грузинская железная дорога). Бот позволяет через Telegram-команды настроить маршрут, дату и класс, после чего автоматически опрашивает API и отправляет уведомления при появлении новых билетов или увеличении свободных мест.
 
 ---
 
@@ -10,7 +10,7 @@
 tg-ticket-monitor/
 ├── bot.py                       # ⚡ Точка входа — Telegram-бот
 ├── ticket_monitor.py            # 🧠 Ядро: опрос API + diff состояний + нотификации
-├── api.py                       # 📡 Асинхронный клиент API tkt.ge
+├── api.py                       # 📡 Асинхронный клиент API tre.ge
 ├── poller.py                    # 🔄 Фоновый asyncio-поллер (по одному на чат)
 ├── config_manager.py            # ⚙️ Управление конфигурацией чатов (JSON)
 │
@@ -42,7 +42,7 @@ tg-ticket-monitor/
 │   ├── test_ticket_monitor.py   # Основной файл с тестами
 │   └── check_syntax.py          # Проверка синтаксиса AST
 │
-├── sample_*.json                # 📊 Примеры данных от API tkt.ge
+├── sample_*.json                # 📊 Примеры данных от API tre.ge
 │
 ├── .venv/                       # 🐍 Виртуальное окружение Python (gitignored)
 └── .git/                        # 📂 Git-репозиторий
@@ -75,16 +75,16 @@ tg-ticket-monitor/
   - `TicketMonitor` — основной класс с методами `start()`, `stop()`, `poll_once()`, `on_change()`.
 - **Детектируемые изменения:** `new_ticket` (новый класс билетов) и `seats_increased` (увеличилось число мест).
 - **Форматирование:** Готовое Telegram-сообщение с маркдауном, эмодзи и деталями рейса.
-- **Публичный API ключ:** `7d8d34d1-e9af-4897-9f0f-5c36c179be77` (встроен в клиентский JS tkt.ge, не является секретом).
+- **Публичный API ключ:** `7d8d34d1-e9af-4897-9f0f-5c36c179be77` (встроен в клиентский JS tre.ge, не является секретом).
 
 ### `api.py` — Асинхронный API-клиент
-- **Роль:** Асинхронные обёртки (`aiohttp`) для трёх эндпоинтов tkt.ge.
+- **Роль:** Асинхронные обёртки (`aiohttp`) для трёх эндпоинтов tre.ge.
 - **Функции:**
   - `get_stations(session)` — получение списка станций
   - `get_available_rides(session, from_code, to_code, date_str, passengers=1)` — рейсы на дату
   - `get_availability_calendar(session, from_code, to_code)` — календарь доступности на 30 дней
   - `fetch_json(session, url, label)` — вспомогательная утилита
-- **Базовый URL:** `https://gateway.tkt.ge/integrations/api/GeorgianRailway`
+- **Базовый URL:** `https://gateway.tre.ge/integrations/api/GeorgianRailway`
 
 ### `poller.py` — Фоновый asyncio-поллер
 - **Роль:** Управление per-chat задачами опроса API. Создаёт асинхронную задачу для каждого чата, проверяет билеты каждые 60 секунд.
@@ -132,7 +132,7 @@ tg-ticket-monitor/
 
 | Файл | Назначение |
 |---|---|
-| `api_explorer.py` | CLI-инструмент для исследования API tkt.ge: станции, популярные маршруты, календарь, рейсы |
+| `api_explorer.py` | CLI-инструмент для исследования API tre.ge: станции, популярные маршруты, календарь, рейсы |
 | `_debug_updater.py` | Просмотр исходного кода `Updater.__init__` из telegram-bot |
 | `_debug_slots.py` | Анализ `__slots__` и MRO иерархии классов `Updater` |
 | `verify_imports.py` | Пустой маркер |
@@ -189,7 +189,7 @@ bot.py ────────────────────► config_ma
             ▼  каждые 60 секунд
         poller._check_and_notify()
             │
-            ├─► api.get_available_rides() ──► tkt.ge API
+            ├─► api.get_available_rides() ──► tre.ge API
             │
             └─► при новых билетах:
                     └─► bot.send_message() ──► Telegram User
@@ -202,7 +202,7 @@ ticket_monitor.TicketMonitor
     ├─► start()  ──► _poll_loop() (threading)
     │
     └─► poll_once()
-            ├─► _fetch_rides()  ──► urllib ──► tkt.ge API
+            ├─► _fetch_rides()  ──► urllib ──► tre.ge API
             ├─► diff с _state.routes
             └─► on_change callbacks
 ```
