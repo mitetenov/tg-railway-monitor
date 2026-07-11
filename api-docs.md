@@ -1,6 +1,6 @@
-# tkt.ge Georgian Railway API — Endpoint Reference
+# tre.ge Georgian Railway API — Endpoint Reference
 
-Base URL: `https://gateway.tkt.ge/integrations/api/GeorgianRailway`
+Base URL: `https://gateway.tre.ge/integrations/api/GeorgianRailway`
 API Key: `7d8d34d1-e9af-4897-9f0f-5c36c179be77` (public key, embedded in Next.js client-side JS)
 
 All endpoints require `api_key` as a query parameter. All requests are `GET`. Responses are JSON. All endpoints are **public** (no authentication beyond the hard-coded key).
@@ -50,7 +50,7 @@ api.py (get_stations / get_available_rides / ...)
 TreGeApi (api_tre.py)  ←── implements TicketApi (_api_base.py)
       │
       ▼ HTTP via aiohttp
-tkt.ge REST API
+tre.ge REST API
 ```
 
 ### Constants
@@ -58,7 +58,7 @@ tkt.ge REST API
 Defined in `_api_base.py` and shared across all implementations:
 
 ```python
-API_BASE = "https://gateway.tkt.ge/integrations/api/GeorgianRailway"
+API_BASE = "https://gateway.tre.ge/integrations/api/GeorgianRailway"
 API_KEY  = "7d8d34d1-e9af-4897-9f0f-5c36c179be77"
 ```
 
@@ -78,7 +78,7 @@ Fetches the full list of Georgian Railway stations.
 
 **Example URL:**
 ```
-https://gateway.tkt.ge/integrations/api/GeorgianRailway/Dictionaries/civil-stations?api_key=7d8d34d1-e9af-4897-9f0f-5c36c179be77
+https://gateway.tre.ge/integrations/api/GeorgianRailway/Dictionaries/civil-stations?api_key=7d8d34d1-e9af-4897-9f0f-5c36c179be77
 ```
 
 **Response format:** Array of station objects.
@@ -155,7 +155,7 @@ Returns aggregate availability data for popular routes in a given direction.
 
 **Example URL:**
 ```
-https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/availability-time-table?day=Tomorrow&directionType=FromTbilisi&api_key=7d8d34d1-e9af-4897-9f0f-5c36c179be77
+https://gateway.tre.ge/integrations/api/GeorgianRailway/Availability/availability-time-table?day=Tomorrow&directionType=FromTbilisi&api_key=7d8d34d1-e9af-4897-9f0f-5c36c179be77
 ```
 
 **Response format:** Array of route summary objects.
@@ -172,7 +172,7 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/availabilit
     "ridesNumber": 1,
     "priceFrom": 35,
     "duration": "02:20:00",
-    "mobileImage": "https://static.tkt.ge/Railway/Popular/batumi.jpg"
+    "mobileImage": "https://static.tre.ge/Railway/Popular/batumi.jpg"
   }
 ]
 ```
@@ -215,7 +215,7 @@ Returns daily ticket availability counts for a route over a ~30-day window.
 
 **Example URL:**
 ```
-https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/availability-calendar?fromStationCode=56014&toStationCode=57151&api_key=7d8d34d1-e9af-4897-9f0f-5c36c179be77
+https://gateway.tre.ge/integrations/api/GeorgianRailway/Availability/availability-calendar?fromStationCode=56014&toStationCode=57151&api_key=7d8d34d1-e9af-4897-9f0f-5c36c179be77
 ```
 
 **Response format:** Object with two arrays.
@@ -281,7 +281,7 @@ Returns actual train rides with seat classes, availability counts, and pricing f
 
 **Example URL:**
 ```
-https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/available-rides?passengersNumbers=1&departureDateFrom=2026-06-27T00:00:00.000Z&startStationCode=56014&endStationCode=57151&returnWay=false&disability=false&api_key=7d8d34d1-e9af-4897-9f0f-5c36c179be77
+https://gateway.tre.ge/integrations/api/GeorgianRailway/Availability/available-rides?passengersNumbers=1&departureDateFrom=2026-06-27T00:00:00.000Z&startStationCode=56014&endStationCode=57151&returnWay=false&disability=false&api_key=7d8d34d1-e9af-4897-9f0f-5c36c179be77
 ```
 
 **Response format:** Object with ride arrays.
@@ -310,7 +310,7 @@ https://gateway.tkt.ge/integrations/api/GeorgianRailway/Availability/available-r
       "hasMap": true,
       "additionalFields": [
         {"label": "#812", "iconUrl": null, "type": 0},
-        {"label": "კონდენციონერი", "iconUrl": "https://static.tkt.ge/.../snowflake.svg", "type": 2}
+        {"label": "კონდენციონერი", "iconUrl": "https://static.tre.ge/.../snowflake.svg", "type": 2}
       ],
       "availableSeatsClasses": [
         {
@@ -446,4 +446,4 @@ For backward compatibility, `api.get_available_rides()` (`api.py:107`) is a modu
 
 5. **Timeout configuration:** `TreGeApi.fetch_json()` (`api_tre.py:118`) uses a 15-second aiohttp timeout. The standalone `ticket_monitor.py` uses a 30-second timeout for urllib requests.
 
-6. **Backend base URL:** All requests go through `gateway.tkt.ge` (not directly to a railway API). The path prefix is `/integrations/api/GeorgianRailway`.
+6. **Backend base URL:** All requests go through `gateway.tre.ge` (not directly to a railway API). The path prefix is `/integrations/api/GeorgianRailway`.
