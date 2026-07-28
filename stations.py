@@ -44,11 +44,9 @@ _STATION_DATA: list[tuple[str, str, str, bool, str]] = [
     ("57290", "Zugdidi",              "Zugdidi",           False, "ზუგდიდი"),
     ("57450", "Kutaisi Airport",      "Kutaisi%20Airport", True,  "ქუთაისის საერთაშორისო აეროპორტი"),
     ("57510", "Rioni",                "Rioni",             False, "რიონი"),
-    # 57530 is absent from civil-stations and currently has no service
-    # (available-rides returns nothing from any origin, and the
-    # availability-time-table samples show ridesNumber: 0).  It comes from
-    # the popular-routes endpoint, so it is kept for code→name lookups.
-    ("57530", "Kutaisi",              "Kutaisi",           True,  "ქუთაისი"),
+    # Kutaisi city — see UNSERVED_STATION_CODES below.  Not bookable, so
+    # it is kept for code→name lookups but never offered for selection.
+    ("57530", "Kutaisi",              "Kutaisi",           False, "ქუთაისი"),
     ("57580", "Sviri",                "Sviri",             False, "სვირი"),
     ("57600", "Zestafoni",            "Zestafoni",         False, "ზესტაფონი"),
     ("57670", "Dzirula",              "Dzirula",           False, "ძირულა"),
@@ -76,11 +74,31 @@ STATION_SLUGS: dict[str, str] = {
 SLUG_TO_STATION: dict[str, str] = {v: k for k, v in STATION_SLUGS.items()}
 """Reverse of STATION_SLUGS: slug → English name."""
 
+UNSERVED_STATION_CODES: frozenset[str] = frozenset({"57530"})
+"""Codes that exist upstream but cannot be booked, so must not be offered.
+
+``57530`` (Kutaisi city) is absent from ``/Dictionaries/civil-stations``
+and has no service at all: ``available-rides`` returns nothing from any
+origin across a 30-day window and ``availability-calendar`` is empty,
+while the popular-routes feed still lists it with ``ridesNumber: 0``.
+Offering it means the user configures a route that can never produce a
+notification.  Rail travellers going to Kutaisi use ``57450`` (Kutaisi
+International Airport), which is served.
+
+Only the offline fallback is filtered — when the API is reachable the
+station list comes from ``civil-stations``, so if service ever starts the
+station reappears on its own.
+"""
+
 FALLBACK_STATIONS: list[dict] = [
     {"code": code, "stationName": name, "isPopular": popular}
     for code, name, _, popular, _ in _STATION_DATA
+    if code not in UNSERVED_STATION_CODES
 ]
-"""Backward-compatible fallback list used by bot.py when the API is down."""
+"""Backward-compatible fallback list used by bot.py when the API is down.
+
+Excludes unbookable stations: this list populates the selection keyboard.
+"""
 
 # ── Localised names (code-keyed) ─────────────────────────────────────────
 

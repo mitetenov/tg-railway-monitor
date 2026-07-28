@@ -32,7 +32,7 @@ API_URL = (
 
 # Present in the popular-routes endpoint but not in civil-stations, and
 # currently unserved. Excluded from the live comparison on purpose.
-NOT_IN_CIVIL_STATIONS = {"57530"}
+NOT_IN_CIVIL_STATIONS = set(stations.UNSERVED_STATION_CODES)
 
 
 class TestStructuralInvariants:
@@ -63,6 +63,35 @@ class TestStructuralInvariants:
         """Duplicate names would make the slug reverse-mapping ambiguous."""
         names = [row[1] for row in _STATION_DATA]
         assert len(names) == len(set(names))
+
+
+class TestUnservedStations:
+    """Unbookable stations stay resolvable but must not be selectable."""
+
+    def test_unserved_stations_are_not_offered(self):
+        offered = {s["code"] for s in FALLBACK_STATIONS}
+        assert not (offered & stations.UNSERVED_STATION_CODES), (
+            "an unbookable station reached the selection keyboard"
+        )
+
+    def test_unserved_stations_still_resolve_by_code(self):
+        """Existing chat configs may still reference the code."""
+        for code in stations.UNSERVED_STATION_CODES:
+            assert int(code) in STATION_NAMES
+            assert int(code) in STATION_NAMES_RU
+            assert int(code) in STATION_NAMES_KA
+
+    def test_unserved_stations_are_not_popular(self):
+        """Popular puts a station on the first keyboard page."""
+        for code, _, _, popular, _ in _STATION_DATA:
+            if code in stations.UNSERVED_STATION_CODES:
+                assert not popular, f"{code} is unbookable but flagged popular"
+
+    def test_kutaisi_airport_is_the_served_one(self):
+        """57450 is the bookable Kutaisi station and must stay offered."""
+        offered = {s["code"] for s in FALLBACK_STATIONS}
+        assert "57450" in offered
+        assert STATION_NAMES[57450] == "Kutaisi Airport"
 
 
 class TestLocalisationCoverage:
