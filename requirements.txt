@@ -1,3 +1,5 @@
-python-telegram-bot>=20.0,<21.0
+# Pinned exactly: patch_slots.py rewrites a __slots__ tuple whose literal
+# text is specific to PTB 20.8 and silently no-ops on any other release.
+python-telegram-bot==20.8
 aiohttp>=3.9,<4.0
 python-dotenv>=1.0

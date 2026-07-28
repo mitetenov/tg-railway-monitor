@@ -1,17 +1,30 @@
 # ── Telegram Ticket Monitor — Docker Compose ─────────────────────
 # Pull & start:  docker compose pull && docker compose up -d
+# Build locally: docker compose build && docker compose up -d
 # Stop:          docker compose down
 # Logs:          docker compose logs -f
 
 services:
   bot:
     image: mitetenov/tg-ticket-monitor:latest
+    # Only used by `docker compose build`; `pull` still fetches the
+    # published image above.
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-0.0.0}
     restart: unless-stopped
     env_file: .env
     volumes:
-      # Persist per-chat JSON configs and monitor state across restarts
+      # Persist per-chat JSON configs across restarts
       - data:/app/data
     container_name: tg-ticket-monitor
+    # Without a limit, `json-file` logs grow until the disk is full.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   data:

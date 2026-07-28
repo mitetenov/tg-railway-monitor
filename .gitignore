@@ -16,6 +16,9 @@ venv/
 
 # Testing
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # Runtime data
 data/

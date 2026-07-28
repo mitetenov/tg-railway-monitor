@@ -9,34 +9,44 @@ FALLBACK_STATIONS / STATION_NAMES / STATION_SLUGS duplicates.
 
 # ── Master list ──────────────────────────────────────────────────────
 # (code, english_name, slug, is_popular, georgian_name)
+#
+# `is_popular` mirrors the isPopular flag of GET /Dictionaries/civil-stations
+# (verified 2026-07-28) — it decides which stations reach the first page of
+# the bot's keyboard, so it must not be guessed.
+#
+# Every entry needs a real code: bot._station_index is keyed by code, so
+# codeless rows all collapse onto the same blank key and produce buttons
+# that select the wrong station.
 _STATION_DATA: list[tuple[str, str, str, bool, str]] = [
     ("56014", "Tbilisi",              "Tbilisi",           True,  "თბილისი"),
     ("56040", "Mtskheta",             "Mtskheta",          False, "მცხეთა"),
     ("56080", "Kaspi",                "Kaspi",             False, "კასპი"),
     ("57000", "Samtredia",            "Samtredia",         True,  "სამტრედია"),
-    ("57030", "Nigoiti",              "Nigoiti",           False, "ნიგოითი"),
+    ("57030", "Nigoiti",              "Nigoiti",           True,  "ნიგოითი"),
     ("57031", "Shukhuti",             "Shukhuti",          False, "შუხუთი"),
     ("57040", "Lanchkhuti",           "Lanchkhuti",        False, "ლანჩხუთი"),
     ("57050", "Jumati",               "Jumati",            False, "ჯუმათი"),
     ("57060", "Supsa",                "Supsa",             False, "სუფსა"),
-    ("57070", "Ureki",                "Ureki",             False, "ურეკი"),
+    ("57070", "Ureki",                "Ureki",             True,  "ურეკი"),
     ("57080", "Natanebi",             "Natanebi",          False, "ნატანები"),
     ("57090", "Meria",                "Meria",             False, "მერია"),
-    ("57100", "Ozurgeti",             "Ozurgeti",          True,  "ოზურგეთი"),
+    ("57100", "Ozurgeti",             "Ozurgeti",          False, "ოზურგეთი"),
     ("57120", "Kobuleti",             "Kobuleti",          True,  "ქობულეთი"),
     ("57151", "Batumi",               "Batumi",            True,  "ბათუმი"),
     ("57170", "Abasha",               "Abasha",            False, "აბაშა"),
-    ("57190", "Senaki",               "Senaki",            True,  "სენაკი"),
+    ("57190", "Senaki",               "Senaki",            False, "სენაკი"),
     ("57194", "Kvaloni",              "Kvaloni",           False, "ქვალონი"),
     ("57202", "Chaladidi",            "Chaladidi",         False, "ჭალადიდი"),
     ("57210", "Poti",                 "Poti",              True,  "ფოთი"),
     ("57250", "Khobi",                "Khobi",             False, "ხობი"),
     ("57252", "Kheta",                "Kheta",             False, "ხეთა"),
     ("57280", "Ingiri",               "Ingiri",            False, "ინგირი"),
-    ("57290", "Zugdidi",              "Zugdidi",           True,  "ზუგდიდი"),
+    ("57290", "Zugdidi",              "Zugdidi",           False, "ზუგდიდი"),
     ("57450", "Kutaisi Airport",      "Kutaisi%20Airport", True,  "ქუთაისის საერთაშორისო აეროპორტი"),
     ("57510", "Rioni",                "Rioni",             False, "რიონი"),
-    ("57530", "Kutaisi",              "Kutaisi",           True,  "ქუთაისი"),
+    # Kutaisi city — see UNSERVED_STATION_CODES below.  Not bookable, so
+    # it is kept for code→name lookups but never offered for selection.
+    ("57530", "Kutaisi",              "Kutaisi",           False, "ქუთაისი"),
     ("57580", "Sviri",                "Sviri",             False, "სვირი"),
     ("57600", "Zestafoni",            "Zestafoni",         False, "ზესტაფონი"),
     ("57670", "Dzirula",              "Dzirula",           False, "ძირულა"),
@@ -44,11 +54,9 @@ _STATION_DATA: list[tuple[str, str, str, bool, str]] = [
     ("57690", "Marelisi",             "Marelisi",          False, "მარელისი"),
     ("57700", "Moliti",               "Moliti",            False, "მოლითი"),
     ("57702", "Tsifa",                "Tsifa",             False, "წიფა"),
-    ("57720", "Khashuri",             "Khashuri",          False, "ხაშური"),
-    ("57880", "Kareli",               "Kareli",            False, "ყარელი"),
+    ("57720", "Khashuri",             "Khashuri",          True,  "ხაშური"),
+    ("57880", "Kareli",               "Kareli",            False, "ქარელი"),
     ("57900", "Gori",                 "Gori",              False, "გორი"),
-    ("",      "Borjomi",              "Borjomi",           False, "ბორჯომი"),
-    ("",      "Akhaltsikhe",          "Akhaltsikhe",       False, "ახალციხე"),
 ]
 
 # ── Derived mappings ─────────────────────────────────────────────────
@@ -66,11 +74,31 @@ STATION_SLUGS: dict[str, str] = {
 SLUG_TO_STATION: dict[str, str] = {v: k for k, v in STATION_SLUGS.items()}
 """Reverse of STATION_SLUGS: slug → English name."""
 
+UNSERVED_STATION_CODES: frozenset[str] = frozenset({"57530"})
+"""Codes that exist upstream but cannot be booked, so must not be offered.
+
+``57530`` (Kutaisi city) is absent from ``/Dictionaries/civil-stations``
+and has no service at all: ``available-rides`` returns nothing from any
+origin across a 30-day window and ``availability-calendar`` is empty,
+while the popular-routes feed still lists it with ``ridesNumber: 0``.
+Offering it means the user configures a route that can never produce a
+notification.  Rail travellers going to Kutaisi use ``57450`` (Kutaisi
+International Airport), which is served.
+
+Only the offline fallback is filtered — when the API is reachable the
+station list comes from ``civil-stations``, so if service ever starts the
+station reappears on its own.
+"""
+
 FALLBACK_STATIONS: list[dict] = [
     {"code": code, "stationName": name, "isPopular": popular}
     for code, name, _, popular, _ in _STATION_DATA
+    if code not in UNSERVED_STATION_CODES
 ]
-"""Backward-compatible fallback list used by bot.py when the API is down."""
+"""Backward-compatible fallback list used by bot.py when the API is down.
+
+Excludes unbookable stations: this list populates the selection keyboard.
+"""
 
 # ── Localised names (code-keyed) ─────────────────────────────────────────
 
@@ -115,8 +143,7 @@ STATION_NAMES_RU: dict[int, str] = {
 }
 """Code → Russian name, e.g. ``56014 → "Тбилиси"``.
 
-Only stations with a known station code are included.
-Stations without a code (Borjomi, Akhaltsikhe) are excluded.
+Kept in sync with ``_STATION_DATA`` by ``test_stations_dictionary.py``.
 """
 
 STATION_NAMES_KA: dict[int, str] = {

@@ -40,6 +40,11 @@ DEFAULT_STATE_FILE = os.path.join(os.path.dirname(__file__), "monitor_state.json
 CLASS_NAMES = {1: "I Class", 2: "II Class", 5: "Business"}
 CLASS_EMOJI = {1: "💺", 2: "🪑", 5: "⭐"}
 
+# Seat-class taxonomy shared with the poller: the value stored in a chat
+# config (the /start wizard) → the API's seatClassId.  Kept next to
+# CLASS_NAMES so the two cannot drift apart.
+CLASS_FILTER_IDS = {"I": 1, "II": 2, "Business": 5}
+
 log = logging.getLogger("ticket_monitor")
 
 

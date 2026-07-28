@@ -1,47 +1,63 @@
-# ─── .dockerignore — keep the image small ───────────────────────────────
+# ─── .dockerignore — keep the build context small and the cache stable ──
 #
-# Exclude everything that isn't needed at runtime.
+# Everything not needed at runtime is excluded.  Beyond image size this
+# protects layer caching: the `COPY *.py` layer must not be invalidated
+# by a README edit or a stray .coverage file.
 
 # Version control
 .git/
 .gitignore
 .gitattributes
+.worktrees/
 
-# Python caches and build artifacts
+# Python caches, test and coverage artifacts
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # Virtual environments (host-specific)
 .venv/
 venv/
 
-# Secrets (mounted at runtime via -e or --env-file)
+# Secrets (passed at runtime via -e or --env-file)
 .env
+.env.*
 
 # Runtime data (persistent volume)
 data/
 monitor_state.json
+config.json
 
-# IDE
+# Editors / agent tooling
 .vscode/
 .idea/
+.claude/
+.opencode/
 
 # Tests and debug helpers (not shipped)
 tests/
-test_ticket_monitor.py
 _debug_*.py
-verify_imports.py
+
+# Dev-only tooling (not imported by bot.py)
+api_explorer.py
+patch_slots.py
+scripts/
 
 # Sample data (development only)
 sample_*.json
 
-# Deployment scripts (host-specific)
-deploy.sh
-tg-ticket-monitor.service
-DEPLOY.md
+# Documentation (not needed at runtime; keeps the code layer cacheable)
+*.md
+LICENSE
 
-# Config backup / misc
---help
-config.json
+# CI / build definitions
+.github/
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-entrypoint.sh
+version.txt
