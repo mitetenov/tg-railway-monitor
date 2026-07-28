@@ -9,7 +9,6 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import aiohttp
 from dotenv import load_dotenv
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -40,9 +39,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise SystemExit("BOT_TOKEN not set in environment or .env file")
+
+# The railway runs on Georgian local time; resolving "today"/"tomorrow"
+# against UTC hands users the wrong date every evening.
+try:
+    from zoneinfo import ZoneInfo
+
+    LOCAL_TZ = ZoneInfo("Asia/Tbilisi")
+except Exception:  # pragma: no cover - host without tzdata
+    LOCAL_TZ = timezone(timedelta(hours=4))
+    logger.warning("tzdata unavailable; falling back to a fixed UTC+4 offset")
+
+
+def get_bot_token() -> str:
+    """Read BOT_TOKEN, failing with a clear message when it is missing.
+
+    Read here rather than at import time so the module stays importable
+    by tests and tooling without a token in the environment.
+    """
+    token = os.getenv("BOT_TOKEN")
+    if not token:
+        raise SystemExit("BOT_TOKEN not set in environment or .env file")
+    return token
+
 
 # ── Station cache ────────────────────────────────────────────────────
 _stations: list[dict] = []        # raw from API
@@ -58,8 +77,8 @@ async def load_stations() -> None:
     """Populate the station cache from API, with fallback."""
     global _stations, _station_index
     try:
-        async with aiohttp.ClientSession() as session:
-            data = await get_stations(session)
+        session = await poller.get_session()
+        data = await get_stations(session)
         if data and isinstance(data, list):
             _stations = data
         else:
@@ -68,10 +87,20 @@ async def load_stations() -> None:
         logger.warning("API station fetch failed, using fallback list")
         _stations = FALLBACK_STATIONS
 
-    # Build index
+    # Rebuild the index from scratch — a reload must not leave entries
+    # from a previous, longer list behind.
+    _station_index = {}
     for s in _stations:
         code = str(s.get("code", ""))
+        if not code:
+            # A blank code collides with every other codeless entry, so the
+            # resulting button would select an arbitrary station.
+            logger.warning("Skipping station without code: %r", s.get("stationName"))
+            continue
         _station_index[code] = s
+
+    # Only keep stations that can actually be selected.
+    _stations = [s for s in _stations if str(s.get("code", ""))]
 
     logger.info("Loaded %d stations", len(_stations))
 
@@ -228,7 +257,7 @@ async def wizard_date_handler(update: Update, context) -> int:
 
     chat_id = update.effective_chat.id
     t = get_user_translation(chat_id, update.effective_user)
-    now = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.now(LOCAL_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
 
     if data == "wiz_date:today":
         date_str = now.strftime("%Y-%m-%d")
@@ -265,11 +294,11 @@ async def wizard_custom_date_handler(update: Update, context) -> int:
     chat_id = update.effective_chat.id
     t = get_user_translation(chat_id, update.effective_user)
 
-    now = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    now = datetime.now(LOCAL_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
 
     if DATE_RE.match(text):
         try:
-            date = datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            date = datetime.strptime(text, "%Y-%m-%d").replace(tzinfo=LOCAL_TZ)
             if date < now:
                 await update.message.reply_text(t("wizard.date_past"), parse_mode="Markdown")
                 return WAITING_CUSTOM_DATE
@@ -596,8 +625,18 @@ async def fallback_handler(update: Update, _context) -> None:
 
 # ═══════════════════════ Main ════════════════════════════════════════
 
+async def error_handler(update: object, context) -> None:
+    """Log any exception raised by a handler, so failures are not silent."""
+    logger.exception("Unhandled error while processing update", exc_info=context.error)
+
+
 async def post_init(application: Application) -> None:
-    """Run after Application initialisation — load station cache and register bot commands."""
+    """Run after Application initialisation.
+
+    Loads the station cache, registers the bot commands and — importantly —
+    restarts monitoring for chats that were already configured before the
+    process restarted.
+    """
     await load_stations()
 
     # Pre-cache both EN and RU translations
@@ -615,10 +654,24 @@ async def post_init(application: Application) -> None:
     )
     logger.info("Bot commands registered with Telegram API")
 
+    restored = poller.restore_all(application.bot)
+    logger.info("Monitoring restored for %d chat(s)", restored)
+
+
+async def post_shutdown(_application: Application) -> None:
+    """Release the shared HTTP session on shutdown."""
+    await poller.close_session()
+
 
 def main() -> None:
     """Build and run the bot."""
-    app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+    app = (
+        Application.builder()
+        .token(get_bot_token())
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
 
     # ── /start wizard Conversation ──
     wizard_conv = ConversationHandler(
@@ -645,6 +698,7 @@ def main() -> None:
 
     # ── Fallback ──
     app.add_handler(MessageHandler(filters.COMMAND, fallback_handler))
+    app.add_error_handler(error_handler)
 
     # ── Start ──
     logger.info("Bot starting...")

@@ -383,14 +383,17 @@ class TestWizardCustomDate:
     @pytest.mark.asyncio
     async def test_valid_iso_date(self):
         import bot
-        update = make_update(text="2026-07-15")
+        # Computed, not hardcoded: a fixed literal silently becomes a past
+        # date and the handler starts rejecting it.
+        future = (datetime.now(bot.LOCAL_TZ) + timedelta(days=30)).strftime("%Y-%m-%d")
+        update = make_update(text=future)
         ctx = make_context()
 
         with patch.object(bot, "_show_departure", AsyncMock(return_value=bot.DEPARTURE_SELECT)):
             result = await bot.wizard_custom_date_handler(update, ctx)
 
         assert result == bot.DEPARTURE_SELECT
-        assert ctx.user_data["date"] == "2026-07-15"
+        assert ctx.user_data["date"] == future
 
     @pytest.mark.asyncio
     async def test_past_date_rejected(self):

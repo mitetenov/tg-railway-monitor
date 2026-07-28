@@ -256,9 +256,18 @@ class TestCheckAndNotifyNegative:
             json.dump(cfg, f)
 
     def _cleanup_config(self, chat_id):
-        p = os.path.join(self.data_dir, f"{chat_id}.json")
-        if os.path.exists(p):
-            os.remove(p)
+        for name in (f"{chat_id}.json", f"{chat_id}.state.json"):
+            p = os.path.join(self.data_dir, name)
+            if os.path.exists(p):
+                os.remove(p)
+
+    def _seed_state(self, chat_id, rides, route="56014>57151@2026-06-27"):
+        """Seed the poller snapshot in its persisted shape.
+
+        The snapshot is scoped to route+date, so a bare {ride: {...}} dict
+        belongs to a different search and is discarded on load.
+        """
+        _state[chat_id] = {"key": route, "rides": rides}
 
     @pytest.mark.asyncio
     async def test_check_without_config(self):
@@ -539,9 +548,7 @@ class TestCheckAndNotifyNegative:
         _state.pop(chat_id, None)
 
         # Seed state: ride #800 already known with 5 seats
-        _state[chat_id] = {
-            "800": {"1": {"seats": 5, "price": 76}},
-        }
+        self._seed_state(chat_id, {"800": {"1": {"seats": 5, "price": 76}}})
 
         # API returns: ride #800 unchanged + ride #900 (new)
         data = {
@@ -579,7 +586,8 @@ class TestCheckAndNotifyNegative:
         assert "Ride #900" in text, "New ride should be in notification"
 
         # Verify state tracks both rides
-        assert str(900) in _state.get(chat_id, {}), "State should track ride 900"
+        rides_state = _state.get(chat_id, {}).get("rides", {})
+        assert str(900) in rides_state, "State should track ride 900"
 
         self._cleanup_config(chat_id)
 
@@ -593,10 +601,13 @@ class TestCheckAndNotifyNegative:
         _state.pop(chat_id, None)
 
         # Seed state: 2 rides already known
-        _state[chat_id] = {
-            "800": {"1": {"seats": 5, "price": 76}},
-            "900": {"5": {"seats": 2, "price": 126}},
-        }
+        self._seed_state(
+            chat_id,
+            {
+                "800": {"1": {"seats": 5, "price": 76}},
+                "900": {"5": {"seats": 2, "price": 126}},
+            },
+        )
 
         # API returns exactly the same data
         data = {
