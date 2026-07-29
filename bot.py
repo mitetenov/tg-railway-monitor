@@ -22,7 +22,13 @@ from telegram.ext import (
 
 import poller
 from api import get_stations
-from config_manager import delete_config, load_config, is_config_complete, save_config
+from config_manager import (
+    check_data_dir_writable,
+    delete_config,
+    is_config_complete,
+    load_config,
+    save_config,
+)
 from i18n import (
     SUPPORTED_LANGUAGES,
     get_user_language,
@@ -648,6 +654,12 @@ async def post_init(application: Application) -> None:
     restarts monitoring for chats that were already configured before the
     process restarted.
     """
+    # Surface an unwritable data volume here, once and legibly, instead of
+    # as a traceback on every message the bot receives.
+    writable, problem = check_data_dir_writable()
+    if not writable:
+        logger.error("Configuration storage is unusable — %s", problem)
+
     await load_stations()
 
     # Pre-cache both EN and RU translations

@@ -45,10 +45,22 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 # ═══════════════════════════════════════════════════════════════════════
 FROM python:${PYTHON_VERSION}-alpine AS runtime
 
+# ── Non-root user id ───────────────────────────────────────────────────
+# 1000 is load-bearing, not arbitrary: it is what `adduser -D` assigned on
+# Alpine in every previously published image, so it is the owner of the
+# files in existing `data` volumes.  Docker only applies the image's
+# ownership when a volume is empty, so raising this silently makes every
+# deployment with an existing volume fail on write:
+#
+#   PermissionError: [Errno 13] Permission denied: '/app/data/<chat>.json'
+#
+# Change it only together with a documented migration (see DEPLOY.md).
+ARG MONITOR_UID=1000
+
 # ── OS packages + non-root user (one layer, changes almost never) ──────
 # tzdata lets the operator pin the container clock with -e TZ=Asia/Tbilisi.
 RUN apk add --no-cache tzdata \
-    && adduser -D -H -u 10001 monitor
+    && adduser -D -H -u ${MONITOR_UID} monitor
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
