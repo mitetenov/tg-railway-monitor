@@ -65,6 +65,36 @@ Per-chat конфиги хранятся в томе Docker `data:/app/data`. Д
 docker run --rm -v tg-ticket-monitor_data:/data alpine ls -la /data
 ```
 
+#### Владелец файлов в томе
+
+Контейнер работает от непривилегированного пользователя `monitor` с **uid 1000**.
+Docker переносит владельца из образа только в **пустой** том — у существующего тома
+владелец остаётся прежним. Поэтому смена uid ломает запись:
+
+```
+PermissionError: [Errno 13] Permission denied: '/app/data/<chat_id>.json'
+```
+
+Бот проверяет это при старте и пишет в лог, что делать:
+
+```bash
+docker compose logs | grep "Configuration storage is unusable"
+```
+
+Если владелец разошёлся, приведите том к uid контейнера:
+
+```bash
+docker compose down
+docker run --rm -v tg-ticket-monitor_data:/data alpine chown -R 1000:1000 /data
+docker compose up -d
+```
+
+> **Если вы разворачивались с нуля 28–29 июля 2026**, образ в тот момент работал от
+> uid 10001, и ваш том принадлежит ему. Команда выше приведёт его к 1000 —
+> данные при этом не теряются.
+
+`MONITOR_UID` в `Dockerfile` вынесен в `ARG`, но менять его без такой миграции нельзя.
+
 ### Пересборка после изменений кода
 
 ```bash

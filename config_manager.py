@@ -19,6 +19,39 @@ def _ensure_data_dir() -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
 
 
+def check_data_dir_writable() -> tuple[bool, str]:
+    """Verify the data directory can actually be written to.
+
+    Called once at startup so an unwritable volume is reported as a single
+    clear message rather than a stack trace on every user interaction —
+    the usual cause is a volume whose files are owned by a different uid
+    than the one the container runs as.
+
+    Returns ``(ok, message)``; *message* is only meaningful when not ok.
+    """
+    probe = os.path.join(DATA_DIR, ".write-probe")
+    try:
+        _ensure_data_dir()
+        with open(probe, "w", encoding="utf-8") as f:
+            f.write("")
+        os.remove(probe)
+        return (True, "")
+    except OSError as e:
+        try:
+            owner = os.stat(DATA_DIR).st_uid
+        except OSError:
+            owner = "?"
+        return (
+            False,
+            f"{DATA_DIR} is not writable ({e}). "
+            f"The container runs as uid {os.getuid()} but the directory is "
+            f"owned by uid {owner}. If this is a Docker volume from an "
+            f"earlier image, fix it with:\n"
+            f"  docker run --rm -v <volume>:/data alpine "
+            f"chown -R {os.getuid()}:{os.getuid()} /data",
+        )
+
+
 def _config_path(chat_id: int) -> str:
     return os.path.join(DATA_DIR, f"{chat_id}.json")
 
