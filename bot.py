@@ -40,8 +40,19 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-# The railway runs on Georgian local time; resolving "today"/"tomorrow"
-# against UTC hands users the wrong date every evening.
+# All dates — "today"/"tomorrow", the past-date check, everything — are
+# resolved in Georgian time, deliberately and for every user.  This is a
+# Georgia-only service: a travel date is a calendar date where the train
+# runs, so that is the only clock under which it is meaningful.
+#
+# Not per-user by design, and not an oversight to "fix" later: Telegram
+# does not expose a user's timezone at all (telegram.User carries
+# language_code and nothing geographic), so per-user handling would mean
+# asking each user and storing it — for a service whose trains all run in
+# one timezone.
+#
+# Resolving against UTC instead would hand every user the wrong date
+# between 20:00 and 24:00 UTC. TestDateResolutionTimezone pins this.
 try:
     from zoneinfo import ZoneInfo
 
