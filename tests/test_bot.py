@@ -340,7 +340,9 @@ class TestWizardDateSelection:
             result = await bot.wizard_date_handler(update, ctx)
 
         assert result == bot.DEPARTURE_SELECT
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        # Must use the bot's own timezone: between 20:00 and 24:00 UTC it is
+        # already the next day in Tbilisi, and a UTC expectation fails.
+        today = datetime.now(bot.LOCAL_TZ).strftime("%Y-%m-%d")
         assert ctx.user_data["date"] == today
 
     @pytest.mark.asyncio
@@ -353,7 +355,7 @@ class TestWizardDateSelection:
             result = await bot.wizard_date_handler(update, ctx)
 
         assert result == bot.DEPARTURE_SELECT
-        tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+        tomorrow = (datetime.now(bot.LOCAL_TZ) + timedelta(days=1)).strftime("%Y-%m-%d")
         assert ctx.user_data["date"] == tomorrow
 
     @pytest.mark.asyncio
@@ -376,6 +378,88 @@ class TestWizardDateSelection:
         result = await bot.wizard_date_handler(update, ctx)
 
         assert result == bot.ConversationHandler.END
+
+
+def _frozen_datetime(instant):
+    """A datetime subclass whose now() always returns *instant*.
+
+    bot.py does `from datetime import datetime`, so patching bot.datetime
+    with this pins the clock for the handler under test.
+    """
+    import datetime as _dt
+
+    class _Frozen(_dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return instant.astimezone(tz) if tz else instant.replace(tzinfo=None)
+
+    return _Frozen
+
+
+class TestDateResolutionTimezone:
+    """Dates resolve against Georgian local time, not UTC.
+
+    These freeze the clock instead of reading it: the UTC-vs-Tbilisi
+    difference only shows up between 20:00 and 24:00 UTC, so a suite that
+    asks the wall clock passes all day and fails at night. That is exactly
+    how the UTC-based expectations reached main.
+    """
+
+    # 20:08 UTC on the 28th is already 00:08 on the 29th in Tbilisi (UTC+4).
+    EVENING_UTC = datetime(2026, 7, 28, 20, 8, tzinfo=timezone.utc)
+    # 10:00 UTC is 14:00 the same day — both zones agree.
+    MIDDAY_UTC = datetime(2026, 7, 28, 10, 0, tzinfo=timezone.utc)
+
+    @pytest.mark.asyncio
+    async def test_today_uses_tbilisi_date_after_20_utc(self):
+        import bot
+        update = make_update(callback_data="wiz_date:today")
+        ctx = make_context()
+
+        with patch.object(bot, "datetime", _frozen_datetime(self.EVENING_UTC)), \
+             patch.object(bot, "_show_departure", AsyncMock(return_value=bot.DEPARTURE_SELECT)):
+            await bot.wizard_date_handler(update, ctx)
+
+        assert ctx.user_data["date"] == "2026-07-29", "should be the Tbilisi date"
+
+    @pytest.mark.asyncio
+    async def test_tomorrow_uses_tbilisi_date_after_20_utc(self):
+        import bot
+        update = make_update(callback_data="wiz_date:tomorrow")
+        ctx = make_context()
+
+        with patch.object(bot, "datetime", _frozen_datetime(self.EVENING_UTC)), \
+             patch.object(bot, "_show_departure", AsyncMock(return_value=bot.DEPARTURE_SELECT)):
+            await bot.wizard_date_handler(update, ctx)
+
+        assert ctx.user_data["date"] == "2026-07-30"
+
+    @pytest.mark.asyncio
+    async def test_today_matches_utc_during_the_day(self):
+        """Outside the offset window the two zones agree — no drift."""
+        import bot
+        update = make_update(callback_data="wiz_date:today")
+        ctx = make_context()
+
+        with patch.object(bot, "datetime", _frozen_datetime(self.MIDDAY_UTC)), \
+             patch.object(bot, "_show_departure", AsyncMock(return_value=bot.DEPARTURE_SELECT)):
+            await bot.wizard_date_handler(update, ctx)
+
+        assert ctx.user_data["date"] == "2026-07-28"
+
+    @pytest.mark.asyncio
+    async def test_current_tbilisi_date_is_not_rejected_as_past(self):
+        """The local date must be bookable even when UTC is still yesterday."""
+        import bot
+        update = make_update(text="2026-07-29")
+        ctx = make_context()
+
+        with patch.object(bot, "datetime", _frozen_datetime(self.EVENING_UTC)), \
+             patch.object(bot, "_show_departure", AsyncMock(return_value=bot.DEPARTURE_SELECT)):
+            result = await bot.wizard_custom_date_handler(update, ctx)
+
+        assert result == bot.DEPARTURE_SELECT
+        assert ctx.user_data["date"] == "2026-07-29"
 
 
 class TestWizardCustomDate:
