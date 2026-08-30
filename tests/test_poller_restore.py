@@ -26,7 +26,7 @@ COMPLETE_CONFIG = {
     "to_station_code": "57151",
     "from_station": "Tbilisi",
     "to_station": "Batumi",
-    "date": "2026-06-27",
+    "date": "2099-06-27",
     "seat_class": "Any",
 }
 
@@ -35,8 +35,8 @@ SAMPLE_RIDES = {
     "departureAvailableRides": [
         {
             "rideNumber": 812,
-            "rideStartDate": "2026-06-27T00:30:00Z",
-            "rideEndDate": "2026-06-27T05:42:00Z",
+            "rideStartDate": "2099-06-27T00:30:00Z",
+            "rideEndDate": "2099-06-27T05:42:00Z",
             "rideDuration": "05:12:00",
             "availableSeatsClasses": [
                 {"seatClassId": 1, "availableNumberOfSeats": 5, "moneyAmount": 76},
@@ -88,11 +88,12 @@ class TestIterChatIds:
 
     def test_ignores_non_numeric_names(self):
         os.makedirs(DATA_DIR, exist_ok=True)
+        before = config_manager.iter_chat_ids()
         junk = os.path.join(DATA_DIR, "notachat.json")
         with open(junk, "w") as f:
             json.dump({}, f)
         try:
-            assert config_manager.iter_chat_ids() is not None  # no crash
+            assert config_manager.iter_chat_ids() == before
         finally:
             os.remove(junk)
 
@@ -202,7 +203,7 @@ class TestStatePersistence:
             assert bot.send_message.call_count == 1
 
             # User picks a different date — same ride numbers, new search.
-            _write_config(chat_id, {"date": "2026-07-04"})
+            _write_config(chat_id, {"date": "2099-07-04"})
             _state.pop(chat_id, None)
             bot.send_message.reset_mock()
 

@@ -4,7 +4,9 @@ Launches an asyncio task per chat that checks available rides every 60 s.
 """
 import asyncio
 import logging
+from datetime import datetime
 from typing import Dict, Optional
+from zoneinfo import ZoneInfo
 
 import aiohttp
 from telegram import Bot
@@ -13,14 +15,18 @@ from telegram.error import TelegramError
 from api import get_available_rides
 from api_tre import TreGeApi
 from config_manager import (
+    clear_monitor_config,
+    delete_state,
     is_config_complete,
     iter_chat_ids,
     load_config,
+    load_monitor_config,
     load_state,
     save_state,
 )
 from i18n import get_user_language, get_user_translation, translate_station_name
-from ticket_monitor import CLASS_FILTER_IDS, CLASS_NAMES
+from monitor_config import ConfigValidationError
+from ticket_domain import CLASS_FILTER_IDS, CLASS_NAMES
 from utils import format_time
 
 logger = logging.getLogger(__name__)
@@ -71,6 +77,7 @@ def _route_key(config: dict) -> str:
     return (
         f"{config.get('from_station_code', '')}>"
         f"{config.get('to_station_code', '')}@{config.get('date', '')}"
+        f"#{config.get('seat_class', 'Any')}"
     )
 
 
@@ -93,6 +100,56 @@ def _get_rides_state(chat_id: int, config: dict) -> dict:
     return entry.setdefault("rides", {})
 
 
+def _snapshot_from_rides(rides: list[dict], seat_class: str) -> tuple[dict, dict]:
+    """Build a complete seat snapshot and display data from an API response."""
+    snapshot: dict = {}
+    available: dict = {}
+    target_id = CLASS_FILTER_IDS.get(seat_class) if seat_class != "Any" else None
+
+    for ride in rides:
+        if not isinstance(ride, dict):
+            continue
+        ride_num = ride.get("rideNumber")
+        if ride_num is None:
+            continue
+        ride_state: dict = {}
+        display_classes = []
+        classes = ride.get("availableSeatsClasses")
+        if not isinstance(classes, list):
+            classes = []
+        for cls in classes:
+            if not isinstance(cls, dict):
+                continue
+            cls_id = cls.get("seatClassId")
+            if target_id is not None and cls_id != target_id:
+                continue
+            cls_name = CLASS_NAMES.get(cls_id)
+            if cls_name is None:
+                continue
+            seats_raw = cls.get("availableNumberOfSeats")
+            seats = seats_raw if isinstance(seats_raw, int) else 0
+            price = cls.get("moneyAmount", 0)
+            ride_state[str(cls_id)] = {"seats": seats, "price": price}
+            if seats > 0:
+                display_classes.append((cls_name, seats, price))
+        snapshot[str(ride_num)] = ride_state
+        if display_classes:
+            available[ride_num] = (ride, display_classes)
+    return snapshot, available
+
+
+def _has_notifiable_change(previous: dict, current: dict) -> bool:
+    """Return whether a class appeared with seats or increased in seats."""
+    for ride_num, classes in current.items():
+        previous_classes = previous.get(ride_num, {})
+        for class_id, entry in classes.items():
+            seats = entry.get("seats", 0)
+            previous_seats = previous_classes.get(class_id, {}).get("seats", 0)
+            if seats > 0 and seats > previous_seats:
+                return True
+    return False
+
+
 async def _check_and_notify(bot: Bot, chat_id: int) -> None:
     """Single check → notify if tickets appeared or seat count increased.
 
@@ -100,17 +157,17 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
     user preferences).  Notification is sent only when the stateful diff
     detects meaningful changes — no spam for unchanged availability.
     """
-    config = load_config(chat_id)
-    if not config:
+    try:
+        monitor_config = load_monitor_config(chat_id)
+    except ConfigValidationError:
+        logger.warning("Skipping invalid monitoring config for chat %d", chat_id)
         return
+    config = monitor_config.to_dict()
 
-    from_code = config.get("from_station_code")
-    to_code = config.get("to_station_code")
-    date = config.get("date")
-    seat_class = config.get("seat_class", "Any")
-
-    if not all([from_code, to_code, date]):
-        return  # incomplete config, skip
+    from_code = monitor_config.from_station_code
+    to_code = monitor_config.to_station_code
+    date = monitor_config.date
+    seat_class = monitor_config.seat_class
 
     session = await get_session()
     data = await get_available_rides(session, from_code, to_code, date)
@@ -118,62 +175,19 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
     if data is None:
         return  # API error, try again next interval
 
-    rides = data.get("departureAvailableRides", [])
-    if not rides:
+    rides = data.get("departureAvailableRides")
+    if not isinstance(rides, list):
+        logger.warning("Malformed rides response for chat %d", chat_id)
         return
 
-    chat_state = _get_rides_state(chat_id, config)
-    has_any_changes = False
-    state_dirty = False
-    all_rides: dict = {}  # ride_number -> (ride_dict, [(cls_name, seats, price), ...])
-
-    for ride in rides:
-        ride_num = ride.get("rideNumber")
-        if ride_num is None:
-            continue
-
-        all_classes = []
-        changed_classes = []
-        classes_raw = ride.get("availableSeatsClasses", [])
-        ride_state = chat_state.get(str(ride_num), {})
-
-        for cls in classes_raw:
-            cls_id = cls.get("seatClassId")
-            cls_name = CLASS_NAMES.get(cls_id, "")
-            seats = cls.get("availableNumberOfSeats") or 0
-            price = cls.get("moneyAmount", 0)
-
-            # Apply class filter
-            if seat_class != "Any":
-                target_id = CLASS_FILTER_IDS.get(seat_class)
-                if target_id is not None and cls_id != target_id:
-                    continue
-
-            # Stateful diff
-            prev_entry = ride_state.get(str(cls_id))
-            prev_seats = prev_entry["seats"] if prev_entry else 0
-
-            if seats > 0:
-                all_classes.append((cls_name, seats, price))
-                if prev_entry is None or seats > prev_seats:
-                    changed_classes.append((cls_name, seats, price))
-
-            # Always persist current state
-            if prev_entry is None or prev_entry.get("seats") != seats:
-                state_dirty = True
-            ride_state[str(cls_id)] = {"seats": seats, "price": price}
-
-        chat_state[str(ride_num)] = ride_state
-
-        if all_classes:
-            all_rides[ride_num] = (ride, all_classes)
-        if changed_classes:
-            has_any_changes = True
-
-    if state_dirty:
-        save_state(chat_id, _state[chat_id])
+    previous = _get_rides_state(chat_id, config)
+    current, all_rides = _snapshot_from_rides(rides, seat_class)
+    has_any_changes = _has_notifiable_change(previous, current)
 
     if not has_any_changes:
+        if current != previous:
+            _state[chat_id] = {"key": _route_key(config), "rides": current}
+            save_state(chat_id, _state[chat_id])
         return
 
     # ── Build one grouped notification with ALL available rides ──────
@@ -217,6 +231,10 @@ async def _check_and_notify(bot: Bot, chat_id: int) -> None:
         )
     except TelegramError as e:
         logger.warning("Failed to notify chat %d: %s", chat_id, e)
+        return
+
+    _state[chat_id] = {"key": _route_key(config), "rides": current}
+    save_state(chat_id, _state[chat_id])
 
 
 async def _poller_loop(bot: Bot, chat_id: int) -> None:
@@ -233,6 +251,8 @@ async def _poller_loop(bot: Bot, chat_id: int) -> None:
     try:
         while True:
             if not _paused.get(chat_id, False):
+                if _expire_if_needed(chat_id):
+                    return
                 try:
                     await _check_and_notify(bot, chat_id)
                 except asyncio.CancelledError:
@@ -251,9 +271,11 @@ async def _poller_loop(bot: Bot, chat_id: int) -> None:
         raise
 
 
-def start(bot: Bot, chat_id: int) -> None:
+def start(bot: Bot, chat_id: int, *, reset_snapshot: bool = False) -> None:
     """Start / restart polling for a chat."""
     stop(chat_id)
+    if reset_snapshot:
+        delete_state(chat_id)
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -261,6 +283,20 @@ def start(bot: Bot, chat_id: int) -> None:
     task = loop.create_task(_poller_loop(bot, chat_id))
     _running_tasks[chat_id] = task
     logger.info("Poller started for chat %d", chat_id)
+
+
+def _expire_if_needed(chat_id: int) -> bool:
+    """Clear a completed travel monitor and return whether it expired."""
+    try:
+        config = load_monitor_config(chat_id)
+    except ConfigValidationError:
+        return False
+    if not config.is_expired(datetime.now(ZoneInfo("Asia/Tbilisi")).date()):
+        return False
+    clear_monitor_config(chat_id)
+    _state.pop(chat_id, None)
+    logger.info("Expired monitoring for chat %d", chat_id)
+    return True
 
 
 def stop(chat_id: int) -> None:
@@ -294,6 +330,8 @@ def restore_all(bot: Bot) -> int:
             logger.warning("Skipping chat %d: %s", chat_id, e)
             continue
         if not is_config_complete(config):
+            continue
+        if _expire_if_needed(chat_id):
             continue
         start(bot, chat_id)
         restored += 1

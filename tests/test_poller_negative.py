@@ -37,28 +37,28 @@ from utils import format_time
 class TestFormatTimeNegative:
 
     def test_only_t_no_time(self):
-        result = format_time("2026-06-27T")
+        result = format_time("2099-06-27T")
         assert result == ""
 
     def test_midnight_exactly(self):
-        result = format_time("2026-06-27T00:00:00Z")
+        result = format_time("2099-06-27T00:00:00Z")
         assert result == "00:00"
 
     def test_negative_timezone(self):
-        result = format_time("2026-06-27T23:59:59-05:00")
+        result = format_time("2099-06-27T23:59:59-05:00")
         assert result == "23:59"
 
     def test_milliseconds(self):
-        result = format_time("2026-06-27T12:30:45.123Z")
+        result = format_time("2099-06-27T12:30:45.123Z")
         # Contains "." so gets split away after HH
         assert result == "12:30"
 
     def test_no_timezone_at_all(self):
-        result = format_time("2026-06-27T12:30:00")
+        result = format_time("2099-06-27T12:30:00")
         assert result == "12:30"
 
     def test_time_with_colon_in_timezone(self):
-        result = format_time("2026-06-27T08:15:00+04:00")
+        result = format_time("2099-06-27T08:15:00+04:00")
         assert result == "08:15"
 
 
@@ -186,8 +186,8 @@ class TestCheckAndNotifyNegative:
         "departureAvailableRides": [
             {
                 "rideNumber": 812,
-                "rideStartDate": "2026-06-27T00:30:00Z",
-                "rideEndDate": "2026-06-27T05:42:00Z",
+                "rideStartDate": "2099-06-27T00:30:00Z",
+                "rideEndDate": "2099-06-27T05:42:00Z",
                 "rideDuration": "05:12:00",
                 "availableSeatsClasses": [
                     {"seatClassId": 2, "availableNumberOfSeats": 0, "moneyAmount": 36},
@@ -201,8 +201,8 @@ class TestCheckAndNotifyNegative:
         "isAnyDepartureTripAvailable": True,
         "departureAvailableRides": [
             {
-                "rideStartDate": "2026-06-27T00:30:00Z",
-                "rideEndDate": "2026-06-27T05:42:00Z",
+                "rideStartDate": "2099-06-27T00:30:00Z",
+                "rideEndDate": "2099-06-27T05:42:00Z",
                 "rideDuration": "05:12:00",
                 "availableSeatsClasses": [
                     {"seatClassId": 2, "availableNumberOfSeats": 5, "moneyAmount": 36},
@@ -217,8 +217,8 @@ class TestCheckAndNotifyNegative:
         "departureAvailableRides": [
             {
                 "rideNumber": 812,
-                "rideStartDate": "2026-06-27T00:30:00Z",
-                "rideEndDate": "2026-06-27T05:42:00Z",
+                "rideStartDate": "2099-06-27T00:30:00Z",
+                "rideEndDate": "2099-06-27T05:42:00Z",
                 "rideDuration": "05:12:00",
                 "availableSeatsClasses": [
                     {"seatClassId": 2, "availableNumberOfSeats": -1, "moneyAmount": 36},
@@ -247,7 +247,7 @@ class TestCheckAndNotifyNegative:
             "to_station_code": "57151",
             "from_station": "Tbilisi",
             "to_station": "Batumi",
-            "date": "2026-06-27",
+            "date": "2099-06-27",
             "seat_class": "Any",
         }
         if overrides:
@@ -261,7 +261,7 @@ class TestCheckAndNotifyNegative:
             if os.path.exists(p):
                 os.remove(p)
 
-    def _seed_state(self, chat_id, rides, route="56014>57151@2026-06-27"):
+    def _seed_state(self, chat_id, rides, route="56014>57151@2099-06-27#Any"):
         """Seed the poller snapshot in its persisted shape.
 
         The snapshot is scoped to route+date, so a bare {ride: {...}} dict
@@ -355,8 +355,8 @@ class TestCheckAndNotifyNegative:
             "departureAvailableRides": [
                 {
                     "rideNumber": 812,
-                    "rideStartDate": "2026-06-27T00:30:00Z",
-                    "rideEndDate": "2026-06-27T05:42:00Z",
+                    "rideStartDate": "2099-06-27T00:30:00Z",
+                    "rideEndDate": "2099-06-27T05:42:00Z",
                     "rideDuration": "05:12:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 5, "availableNumberOfSeats": 3, "moneyAmount": 126},
@@ -369,10 +369,10 @@ class TestCheckAndNotifyNegative:
 
         with patch("poller.get_available_rides", AsyncMock(return_value=data)):
             await _check_and_notify(mock_bot, chat_id)
-            if mock_bot.send_message.called:
-                text = mock_bot.send_message.call_args[1]["text"]
-                assert "Business" in text
-                assert "II Class" not in text
+        mock_bot.send_message.assert_awaited_once()
+        text = mock_bot.send_message.call_args.kwargs["text"]
+        assert "Business" in text
+        assert "II Class" not in text
 
         self._cleanup_config(chat_id)
 
@@ -390,8 +390,8 @@ class TestCheckAndNotifyNegative:
             "departureAvailableRides": [
                 {
                     "rideNumber": 812,
-                    "rideStartDate": "2026-06-27T00:30:00Z",
-                    "rideEndDate": "2026-06-27T05:42:00Z",
+                    "rideStartDate": "2099-06-27T00:30:00Z",
+                    "rideEndDate": "2099-06-27T05:42:00Z",
                     "rideDuration": "05:12:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 1, "availableNumberOfSeats": 15, "moneyAmount": 76},
@@ -404,10 +404,10 @@ class TestCheckAndNotifyNegative:
 
         with patch("poller.get_available_rides", AsyncMock(return_value=data)):
             await _check_and_notify(mock_bot, chat_id)
-            if mock_bot.send_message.called:
-                text = mock_bot.send_message.call_args[1]["text"]
-                assert "I Class" in text
-                assert "II Class" not in text  # exact match — no false positive
+        mock_bot.send_message.assert_awaited_once()
+        text = mock_bot.send_message.call_args.kwargs["text"]
+        assert "I Class" in text
+        assert "II Class" not in text  # exact match — no false positive
 
         self._cleanup_config(chat_id)
 
@@ -438,8 +438,8 @@ class TestCheckAndNotifyNegative:
             "departureAvailableRides": [
                 {
                     "rideNumber": 812,
-                    "rideStartDate": "2026-06-27T00:30:00Z",
-                    "rideEndDate": "2026-06-27T05:42:00Z",
+                    "rideStartDate": "2099-06-27T00:30:00Z",
+                    "rideEndDate": "2099-06-27T05:42:00Z",
                     "rideDuration": "05:12:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 5, "availableNumberOfSeats": 3, "moneyAmount": 126},
@@ -472,8 +472,8 @@ class TestCheckAndNotifyNegative:
             "departureAvailableRides": [
                 {
                     "rideNumber": 812,
-                    "rideStartDate": "2026-06-27T00:30:00Z",
-                    "rideEndDate": "2026-06-27T05:42:00Z",
+                    "rideStartDate": "2099-06-27T00:30:00Z",
+                    "rideEndDate": "2099-06-27T05:42:00Z",
                     "rideDuration": "05:12:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 5, "availableNumberOfSeats": 3, "moneyAmount": 126},
@@ -506,8 +506,8 @@ class TestCheckAndNotifyNegative:
             "departureAvailableRides": [
                 {
                     "rideNumber": 800,
-                    "rideStartDate": "2026-06-27T08:00:00Z",
-                    "rideEndDate": "2026-06-27T13:00:00Z",
+                    "rideStartDate": "2099-06-27T08:00:00Z",
+                    "rideEndDate": "2099-06-27T13:00:00Z",
                     "rideDuration": "05:00:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 1, "availableNumberOfSeats": 5, "moneyAmount": 76},
@@ -515,8 +515,8 @@ class TestCheckAndNotifyNegative:
                 },
                 {
                     "rideNumber": 900,
-                    "rideStartDate": "2026-06-27T18:00:00Z",
-                    "rideEndDate": "2026-06-27T23:00:00Z",
+                    "rideStartDate": "2099-06-27T18:00:00Z",
+                    "rideEndDate": "2099-06-27T23:00:00Z",
                     "rideDuration": "05:00:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 5, "availableNumberOfSeats": 2, "moneyAmount": 126},
@@ -529,10 +529,10 @@ class TestCheckAndNotifyNegative:
         with patch("poller.get_available_rides", AsyncMock(return_value=data)):
             await _check_and_notify(mock_bot, chat_id)
 
-        if mock_bot.send_message.called:
-            text = mock_bot.send_message.call_args[1]["text"]
-            assert "Ride #800" in text
-            assert "Ride #900" in text
+        mock_bot.send_message.assert_awaited_once()
+        text = mock_bot.send_message.call_args.kwargs["text"]
+        assert "Ride #800" in text
+        assert "Ride #900" in text
 
         self._cleanup_config(chat_id)
 
@@ -556,8 +556,8 @@ class TestCheckAndNotifyNegative:
             "departureAvailableRides": [
                 {
                     "rideNumber": 800,
-                    "rideStartDate": "2026-06-27T08:00:00Z",
-                    "rideEndDate": "2026-06-27T13:00:00Z",
+                    "rideStartDate": "2099-06-27T08:00:00Z",
+                    "rideEndDate": "2099-06-27T13:00:00Z",
                     "rideDuration": "05:00:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 1, "availableNumberOfSeats": 5, "moneyAmount": 76},
@@ -565,8 +565,8 @@ class TestCheckAndNotifyNegative:
                 },
                 {
                     "rideNumber": 900,
-                    "rideStartDate": "2026-06-27T18:00:00Z",
-                    "rideEndDate": "2026-06-27T23:00:00Z",
+                    "rideStartDate": "2099-06-27T18:00:00Z",
+                    "rideEndDate": "2099-06-27T23:00:00Z",
                     "rideDuration": "05:00:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 5, "availableNumberOfSeats": 2, "moneyAmount": 126},
@@ -615,8 +615,8 @@ class TestCheckAndNotifyNegative:
             "departureAvailableRides": [
                 {
                     "rideNumber": 800,
-                    "rideStartDate": "2026-06-27T08:00:00Z",
-                    "rideEndDate": "2026-06-27T13:00:00Z",
+                    "rideStartDate": "2099-06-27T08:00:00Z",
+                    "rideEndDate": "2099-06-27T13:00:00Z",
                     "rideDuration": "05:00:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 1, "availableNumberOfSeats": 5, "moneyAmount": 76},
@@ -624,8 +624,8 @@ class TestCheckAndNotifyNegative:
                 },
                 {
                     "rideNumber": 900,
-                    "rideStartDate": "2026-06-27T18:00:00Z",
-                    "rideEndDate": "2026-06-27T23:00:00Z",
+                    "rideStartDate": "2099-06-27T18:00:00Z",
+                    "rideEndDate": "2099-06-27T23:00:00Z",
                     "rideDuration": "05:00:00",
                     "availableSeatsClasses": [
                         {"seatClassId": 5, "availableNumberOfSeats": 2, "moneyAmount": 126},

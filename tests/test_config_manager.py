@@ -3,6 +3,7 @@ import os
 import json
 import tempfile
 import sys
+from unittest.mock import patch
 
 # Override DATA_DIR for tests
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -51,7 +52,7 @@ def test_is_config_complete():
     full = {
         "from_station_code": "56014",
         "to_station_code": "57151",
-        "date": "2026-07-15",
+        "date": "2099-07-15",
         "seat_class": "Any",
     }
     assert is_config_complete(full)
@@ -76,3 +77,28 @@ def test_unicode_in_config():
     loaded = cm.load_config(33333)
     assert loaded["from_station"] == "თბილისი"
     assert loaded["to_station"] == "ბათუმი"
+
+
+def test_save_replaces_file_atomically():
+    with patch.object(cm.os, "replace", wraps=cm.os.replace) as replace:
+        cm.save_config(44444, {"key": "value"})
+
+    replace.assert_called_once()
+    assert cm.load_config(44444) == {"key": "value"}
+
+
+def test_clear_monitor_config_keeps_language_and_removes_state():
+    chat_id = 55555
+    cm.save_config(chat_id, {
+        "language": "ru",
+        "from_station_code": "56014",
+        "to_station_code": "57151",
+        "date": "2099-07-15",
+        "seat_class": "Any",
+    })
+    cm.save_state(chat_id, {"key": "example", "rides": {}})
+
+    cm.clear_monitor_config(chat_id)
+
+    assert cm.load_config(chat_id) == {"language": "ru"}
+    assert cm.load_state(chat_id) == {}

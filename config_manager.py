@@ -6,7 +6,10 @@ State:  data/{chat_id}.state.json  (poller's last-seen seat counts)
 import json
 import logging
 import os
+import tempfile
 from typing import Optional
+
+from monitor_config import ConfigValidationError, MonitorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,28 @@ def _config_path(chat_id: int) -> str:
     return os.path.join(DATA_DIR, f"{chat_id}.json")
 
 
+def _atomic_write_json(path: str, data: dict) -> None:
+    """Atomically replace *path* with JSON data on the same filesystem."""
+    _ensure_data_dir()
+    descriptor, temporary_path = tempfile.mkstemp(
+        dir=DATA_DIR,
+        prefix=f".{os.path.basename(path)}.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+    except OSError:
+        try:
+            os.remove(temporary_path)
+        except OSError:
+            pass
+        raise
+
+
 def _state_path(chat_id: int) -> str:
     return os.path.join(DATA_DIR, f"{chat_id}{_STATE_SUFFIX}")
 
@@ -97,11 +122,9 @@ def load_config(chat_id: int) -> dict:
 
 def save_config(chat_id: int, config: dict) -> None:
     """Persist config dict for a chat."""
-    _ensure_data_dir()
     path = _config_path(chat_id)
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=2, ensure_ascii=False)
+        _atomic_write_json(path, config)
     except (IOError, OSError) as e:
         raise RuntimeError(
             f"Failed to save config for chat {chat_id} to {path}: {e}"
@@ -119,6 +142,35 @@ def delete_config(chat_id: int) -> None:
                 f"Failed to delete config for chat {chat_id} at {path}: {e}"
             ) from e
     delete_state(chat_id)
+
+
+def clear_monitor_config(chat_id: int) -> None:
+    """Remove monitor settings and state while preserving interface language."""
+    config = load_config(chat_id)
+    language = config.get("language")
+    if language:
+        save_config(chat_id, {"language": language})
+    else:
+        delete_config(chat_id)
+        return
+    delete_state(chat_id)
+
+
+def load_monitor_config(chat_id: int) -> MonitorConfig:
+    """Load and validate a complete monitor configuration."""
+    return MonitorConfig.from_dict(load_config(chat_id))
+
+
+def save_monitor_config(
+    chat_id: int,
+    config: MonitorConfig,
+    language: Optional[str] = None,
+) -> None:
+    """Persist validated monitoring fields and an optional UI language."""
+    data = config.to_dict()
+    if language:
+        data["language"] = language
+    save_config(chat_id, data)
 
 
 # ── Poller state ─────────────────────────────────────────────────────
@@ -150,19 +202,11 @@ def save_state(chat_id: int, state: dict) -> None:
     Writes via a temporary file so an interrupted write cannot leave
     truncated JSON behind.
     """
-    _ensure_data_dir()
     path = _state_path(chat_id)
-    tmp = f"{path}.tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False)
-        os.replace(tmp, path)
+        _atomic_write_json(path, state)
     except OSError as e:
         logger.warning("Could not save poller state for chat %d: %s", chat_id, e)
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
 
 
 def delete_state(chat_id: int) -> None:
@@ -177,5 +221,8 @@ def delete_state(chat_id: int) -> None:
 
 def is_config_complete(config: dict) -> bool:
     """Check if all required fields are present for monitoring."""
-    required = ("from_station_code", "to_station_code", "date", "seat_class")
-    return all(k in config for k in required)
+    try:
+        MonitorConfig.from_dict(config)
+    except ConfigValidationError:
+        return False
+    return True

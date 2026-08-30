@@ -128,17 +128,17 @@ class TestBackwardCompatAliases:
         expected = {"departureAvailableRides": []}
         inst = get_ticket_api()
         inst.search_trips = AsyncMock(return_value=expected)
-        result = await get_available_rides(mock_session, "56014", "57151", "2026-07-15")
+        result = await get_available_rides(mock_session, "56014", "57151", "2099-07-15")
         assert result == expected
-        inst.search_trips.assert_awaited_once_with(mock_session, "56014", "57151", "2026-07-15", 1)
+        inst.search_trips.assert_awaited_once_with(mock_session, "56014", "57151", "2099-07-15", 1)
 
     @pytest.mark.asyncio
     async def test_get_available_rides_alias_custom_passengers(self):
         mock_session = MagicMock()
         inst = get_ticket_api()
         inst.search_trips = AsyncMock(return_value={})
-        await get_available_rides(mock_session, "56014", "57151", "2026-07-15", passengers=3)
-        inst.search_trips.assert_awaited_once_with(mock_session, "56014", "57151", "2026-07-15", 3)
+        await get_available_rides(mock_session, "56014", "57151", "2099-07-15", passengers=3)
+        inst.search_trips.assert_awaited_once_with(mock_session, "56014", "57151", "2099-07-15", 3)
 
     @pytest.mark.asyncio
     async def test_get_availability_calendar_alias(self):

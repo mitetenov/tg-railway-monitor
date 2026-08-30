@@ -409,14 +409,12 @@ For backward compatibility, `api.get_available_rides()` (`api.py:107`) is a modu
 **Used by:** This is the core endpoint used for monitoring.
 - `api.py:107` — `get_available_rides()` backward-compat alias (delegates to ``TreGeApi.search_trips()``)
 - `api_tre.py:171` — `TreGeApi.search_trips()` (actual implementation for tre.ge)
-- `ticket_monitor.py:381` — `_fetch_rides()` using `urllib` (standalone monitor, no dependencies)
 |- `api_explorer.py:69` — `get_available_rides()` sync wrapper (exploratory)
 |- `poller.py:55` — `_check_and_notify()` calls the async alias
 
 **Source files:**
 - `api.py:107` — `get_available_rides()` alias wrapping ``search_trips()``
 - `api_tre.py:171` — `TreGeApi.search_trips()` (primary implementation)
-- `ticket_monitor.py:381` — sync wrapper via urllib (zero-dependency monitor)
 - `poller.py:55` — async call via aiohttp (Telegram bot poller)
 |- `api_explorer.py:69` — sync wrapper via curl subprocess
 
@@ -429,7 +427,6 @@ For backward compatibility, `api.get_available_rides()` (`api.py:107`) is a modu
 | `api_tre.py`      | Stations, Rides, Calendar      | aiohttp     |
 | `api.py`          | Factory + backward-compat layer | aiohttp    |
 | `_api_base.py`    | Constants + TicketApi ABC       | aiohttp     |
-| `ticket_monitor.py` | Rides only                   | urllib      |
 | `poller.py`       | Rides only                     | aiohttp     |
 | `bot.py`          | Stations (cached at startup)   | aiohttp     |
 | `api_explorer.py` | Stations, Popular Routes, Calendar, Rides | curl via subprocess |
@@ -444,6 +441,6 @@ For backward compatibility, `api.get_available_rides()` (`api.py:107`) is a modu
 
 4. **API key is public:** The key `7d8d34d1-e9af-4897-9f0f-5c36c179be77` is hard-coded in the Next.js frontend source. It's not a secret — treat as a public client-side key.
 
-5. **Timeout configuration:** `TreGeApi.fetch_json()` (`api_tre.py:118`) uses a 15-second aiohttp timeout. The standalone `ticket_monitor.py` uses a 30-second timeout for urllib requests.
+5. **Timeout configuration:** `TreGeApi.fetch_json()` (`api_tre.py`) uses a 15-second aiohttp timeout.
 
 6. **Backend base URL:** All requests go through `gateway.tre.ge` (not directly to a railway API). The path prefix is `/integrations/api/GeorgianRailway`.

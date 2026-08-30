@@ -90,10 +90,10 @@ class TestPurchaseURL:
 
     def test_url_with_codes(self):
         """URL with different station codes."""
-        url = build_purchase_url("56014", "57413", "2026-07-15")
+        url = build_purchase_url("56014", "57413", "2099-07-15")
         assert "leavingPlace=56014" in url
         assert "enteringPlace=57413" in url
-        assert "leaveDate=15.07.2026" in url
+        assert "leaveDate=15.07.2099" in url
         assert "passengerCount=1" in url
         assert "wcuCount=0" in url
         assert "depVT=railway" in url
@@ -109,8 +109,8 @@ class TestPurchaseURL:
 
     def test_date_conversion(self):
         """Date is correctly converted from YYYY-MM-DD to DD.MM.YYYY."""
-        url = build_purchase_url("56014", "57151", "2026-12-25")
-        assert "leaveDate=25.12.2026" in url
+        url = build_purchase_url("56014", "57151", "2099-12-25")
+        assert "leaveDate=25.12.2099" in url
 
     def test_edge_dates(self):
         """Edge cases for date conversion."""
@@ -183,11 +183,11 @@ class TestTreGeApiUrlBuilders:
 
     def test_build_rides_url(self):
         """Rides URL includes all required parameters."""
-        url = self.api._build_rides_url("56014", "57151", "2026-07-15", 2)
+        url = self.api._build_rides_url("56014", "57151", "2099-07-15", 2)
         assert "/Availability/available-rides" in url
         assert "startStationCode=56014" in url
         assert "endStationCode=57151" in url
-        assert "departureDateFrom=2026-07-15T00:00:00.000Z" in url
+        assert "departureDateFrom=2099-07-15T00:00:00.000Z" in url
         assert "passengersNumbers=2" in url
         assert "returnWay=false" in url
         assert "disability=false" in url
@@ -195,7 +195,7 @@ class TestTreGeApiUrlBuilders:
 
     def test_build_rides_url_default_passengers(self):
         """Rides URL defaults to 1 passenger."""
-        url = self.api._build_rides_url("56014", "57151", "2026-07-15")
+        url = self.api._build_rides_url("56014", "57151", "2099-07-15")
         assert "passengersNumbers=1" in url
 
     def test_build_calendar_url(self):
@@ -232,9 +232,9 @@ class TestTreGeApiAsyncMethods:
     async def test_search_trips_delegates_to_fetch_json(self):
         """search_trips builds the right URL and uses fetch_json."""
         mock_session = MagicMock()
-        url = self.api._build_rides_url("56014", "57151", "2026-07-15")
+        url = self.api._build_rides_url("56014", "57151", "2099-07-15")
         self.api.fetch_json = AsyncMock(return_value={"departureAvailableRides": []})
-        result = await self.api.search_trips(mock_session, "56014", "57151", "2026-07-15")
+        result = await self.api.search_trips(mock_session, "56014", "57151", "2099-07-15")
         self.api.fetch_json.assert_awaited_once_with(mock_session, url, "rides")
         assert result == {"departureAvailableRides": []}
 
