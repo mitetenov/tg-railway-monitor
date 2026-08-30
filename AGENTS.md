@@ -84,9 +84,10 @@ Persists via `set_user_language()` to per-chat JSON config.
 | `api_tre.py`        | `TreGeApi(TicketApi)` — tre.ge implementation, purchase URL builder |
 | `api_explorer.py`   | API exploration utilities |
 | `config_manager.py` | Per-chat JSON config CRUD in `data/{chat_id}.json` |
+| `monitor_config.py` | Validated route/date/class value object and expiry rule |
+| `ticket_domain.py` | Seat-class identifiers and display names shared by active code |
 | `i18n.py`           | `Translation` class, plurals, user lang detection/storage, station name translation |
 | `stations.py`       | Single source of truth for station data, all mappings derived from `_STATION_DATA` |
-| `ticket_monitor.py` | Legacy standalone monitor (sync, threading-based) |
 | `utils.py`          | `format_time`, `fmt_duration` helpers |
 | `patch_slots.py`    | Python 3.13 PTB compatibility patch |
 | `_debug_slots.py`   | Debug utilities for `__slots__` issues |
@@ -150,16 +151,17 @@ Georgian (ka) station names defined in `stations.py` alongside English names.
 Per-chat configs stored as `data/{chat_id}.json`:
 
 ```python
-load_config(chat_id)    → dict (or {})
-save_config(chat_id, config_dict)
-delete_config(chat_id)
-is_config_complete(d)   → bool  # checks from_station_code, to_station_code, date, seat_class
+load_config(chat_id)          → dict (or {})
+save_config(chat_id, config)  → atomic replace
+load_monitor_config(chat_id)  → MonitorConfig (validated)
+clear_monitor_config(chat_id) → keeps language, removes monitor state
+is_config_complete(d)         → bool (valid route/date/class)
 ```
 
 ### Data flow
 
 ```
-User → /start wizard → config_manager.save_config()
+User → /start wizard draft → config_manager.save_monitor_config()
                           ↓
 User receives "monitoring started" ← poller.start(bot, chat_id)
                           ↓
@@ -214,8 +216,8 @@ Data persistence: Docker named volume `data` mounted at `/app/data`.
 3. **Poller global state** — `_state`, `_paused`, `_running_tasks` are module-level dicts. Tests must clear them between cases.
 4. **`python-telegram-bot` 3.13 compat** — `patch_slots.py` monkey-patches `__slots__` issues. Only needed on Python 3.13+ bare-metal; Docker uses 3.11.
 5. **Do NOT add `/setroute`, `/setdate`, `/setclass`, `/status` commands** — these were removed. All config goes through the `/start` wizard.
-6. **`ticket_monitor.py` is legacy** — new work should use `poller.py` + `bot.py` pathway. `ticket_monitor.py` uses sync threading and Python stdlib HTTP, not aiohttp.
-7. **Station data lives only in `stations.py`** — don't duplicate station names/codes/slugs elsewhere.
+6. **Station data lives only in `stations.py`** — don't duplicate station names/codes/slugs elsewhere.
+7. **Seat-class identifiers live only in `ticket_domain.py`** — don't duplicate them in handlers or providers.
 8. **The compileall command excludes `.worktrees/`** when run as `python -m compileall . -q -x '.venv|__pycache__|tests|.worktrees'` — the extra exclusion was added because Hermes git worktrees can exist in the repo.
 
 ## Test file listing
@@ -231,12 +233,10 @@ tests/
 ├── test_config_manager.py         — Config CRUD
 ├── test_config_manager_negative.py— Config error paths
 ├── test_i18n.py                   — Translation, plurals, station names
-├── test_poller.py                 — Poller snapshot logic
-├── test_poller_grouped.py         — Grouped notification formatting
+├── test_monitor_config.py          — Monitor configuration validation
+├── test_poller_delivery.py         — Poller notification delivery guarantees
 ├── test_poller_negative.py        — Poller error/edge cases
-├── test_poller_purchase_url.py    — Purchase URL generation
-├── test_poller_time_format.py     — Time formatting in notifications
-├── test_ticket_monitor.py         — Legacy TicketMonitor class
-├── test_ticket_monitor_negative.py— Legacy monitor error paths
+├── test_poller_restore.py         — Snapshot persistence and restart restore
+├── test_utils.py                   — Notification formatting helpers
 └── test_user_lang.py              — User language detection/persistence
 ```

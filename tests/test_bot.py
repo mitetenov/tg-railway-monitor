@@ -628,20 +628,17 @@ class TestWizardArrival:
         ctx = make_context()
         ctx.user_data["from_code"] = "56014"
         ctx.user_data["from_station"] = "Tbilisi"
-        ctx.user_data["date"] = "2026-07-15"
+        ctx.user_data["date"] = "2099-07-15"
 
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
-             patch.object(bot, "_show_class", AsyncMock(return_value=bot.CLASS_SELECT)):
+        with patch.object(bot, "_show_class", AsyncMock(return_value=bot.CLASS_SELECT)) as mock_show_class:
             result = await bot.wizard_arrival_handler(update, ctx)
 
         assert result == bot.CLASS_SELECT
-        saved = mock_save.call_args[0][1]
-        assert saved["from_station"] == "Tbilisi"
-        assert saved["to_station"] == "Batumi"
-        assert saved["from_station_code"] == "56014"
-        assert saved["to_station_code"] == "57151"
-        assert saved["date"] == "2026-07-15"
+        assert ctx.user_data["from_station"] == "Tbilisi"
+        assert ctx.user_data["to_station"] == "Batumi"
+        assert ctx.user_data["from_code"] == "56014"
+        assert ctx.user_data["to_code"] == "57151"
+        mock_show_class.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_same_station_rejected(self):
@@ -708,59 +705,60 @@ class TestWizardClassSelection:
         import bot
         update = make_update(callback_data="wiz_class:Any", chat_id=12345)
         ctx = make_context()
+        ctx.user_data.update({"date": "2099-07-15", "from_code": "56014", "from_station": "Tbilisi", "to_code": "57151", "to_station": "Batumi"})
 
         with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
+             patch("bot.save_monitor_config") as mock_save, \
              patch("bot.poller.start"):
             result = await bot.wizard_class_handler(update, ctx)
 
         assert result == bot.ConversationHandler.END
-        saved = mock_save.call_args[0][1]
-        assert saved["seat_class"] == "Any"
+        assert mock_save.call_args.args[1].seat_class == "Any"
 
     @pytest.mark.asyncio
     async def test_select_business_starts_poller(self):
         import bot
         update = make_update(callback_data="wiz_class:Business", chat_id=12345)
         ctx = make_context()
+        ctx.user_data.update({"date": "2099-07-15", "from_code": "56014", "from_station": "Tbilisi", "to_code": "57151", "to_station": "Batumi"})
 
         with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config"), \
+             patch("bot.save_monitor_config"), \
              patch("bot.poller.start") as mock_poller_start:
             result = await bot.wizard_class_handler(update, ctx)
 
         assert result == bot.ConversationHandler.END
-        mock_poller_start.assert_called_once()
+        mock_poller_start.assert_called_once_with(ctx.bot, 12345)
 
     @pytest.mark.asyncio
     async def test_select_class_i(self):
         import bot
         update = make_update(callback_data="wiz_class:I", chat_id=12345)
         ctx = make_context()
+        ctx.user_data.update({"date": "2099-07-15", "from_code": "56014", "from_station": "Tbilisi", "to_code": "57151", "to_station": "Batumi"})
 
         with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
+             patch("bot.save_monitor_config") as mock_save, \
              patch("bot.poller.start"):
             result = await bot.wizard_class_handler(update, ctx)
 
         assert result == bot.ConversationHandler.END
-        saved = mock_save.call_args[0][1]
-        assert saved["seat_class"] == "I"
+        assert mock_save.call_args.args[1].seat_class == "I"
 
     @pytest.mark.asyncio
     async def test_select_class_ii(self):
         import bot
         update = make_update(callback_data="wiz_class:II", chat_id=12345)
         ctx = make_context()
+        ctx.user_data.update({"date": "2099-07-15", "from_code": "56014", "from_station": "Tbilisi", "to_code": "57151", "to_station": "Batumi"})
 
         with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config") as mock_save, \
+             patch("bot.save_monitor_config") as mock_save, \
              patch("bot.poller.start"):
             result = await bot.wizard_class_handler(update, ctx)
 
         assert result == bot.ConversationHandler.END
-        saved = mock_save.call_args[0][1]
-        assert saved["seat_class"] == "II"
+        assert mock_save.call_args.args[1].seat_class == "II"
 
 
 # ═══════════════════════ /stop Command ═════════════════════════════════
@@ -769,17 +767,17 @@ class TestWizardClassSelection:
 class TestStopCommand:
 
     @pytest.mark.asyncio
-    async def test_stop_calls_poller_stop_and_delete_config(self):
+    async def test_stop_calls_poller_stop_and_clears_monitor_config(self):
         import bot
         update = make_update(chat_id=12345)
         ctx = make_context()
 
         with patch("bot.poller.stop") as mock_poller_stop, \
-             patch("bot.delete_config") as mock_delete_config:
+             patch("bot.clear_monitor_config") as mock_clear:
             await bot.cmd_stop(update, ctx)
 
             mock_poller_stop.assert_called_once_with(12345)
-            mock_delete_config.assert_called_once_with(12345)
+            mock_clear.assert_called_once_with(12345)
             update.message.reply_text.assert_called_once()
 
     @pytest.mark.asyncio
@@ -789,7 +787,7 @@ class TestStopCommand:
         ctx = make_context()
 
         with patch("bot.poller.stop"), \
-             patch("bot.delete_config"):
+             patch("bot.clear_monitor_config"):
             await bot.cmd_stop(update, ctx)
 
             text = update.message.reply_text.call_args[0][0]
@@ -1079,7 +1077,7 @@ class TestDateRegex:
 
     def test_date_regex_valid(self):
         import bot
-        assert bot.DATE_RE.match("2026-07-15")
+        assert bot.DATE_RE.match("2099-07-15")
         assert bot.DATE_RE.match("2026-01-01")
         assert bot.DATE_RE.match("2026-12-31")
 
@@ -1339,10 +1337,8 @@ class TestAll36StationsNoNumericCodes:
         ctx = make_context()
         ctx.user_data["from_code"] = "56014"
         ctx.user_data["from_station"] = "Tbilisi"
-        ctx.user_data["date"] = "2026-07-15"
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config"), \
-             patch.object(bot, "_show_class", AsyncMock(return_value=bot.CLASS_SELECT)):
+        ctx.user_data["date"] = "2099-07-15"
+        with patch.object(bot, "_show_class", AsyncMock(return_value=bot.CLASS_SELECT)):
             await bot.wizard_arrival_handler(update, ctx)
         edit_call = update.callback_query.edit_message_text.call_args
         message_text = edit_call[0][0]
@@ -1374,10 +1370,8 @@ class TestAll36StationsNoNumericCodes:
         ctx = make_context()
         ctx.user_data["from_code"] = "56014"
         ctx.user_data["from_station"] = "Tbilisi"
-        ctx.user_data["date"] = "2026-07-15"
-        with patch("bot.load_config", return_value={}), \
-             patch("bot.save_config"), \
-             patch.object(bot, "_show_class", AsyncMock(return_value=bot.CLASS_SELECT)):
+        ctx.user_data["date"] = "2099-07-15"
+        with patch.object(bot, "_show_class", AsyncMock(return_value=bot.CLASS_SELECT)):
             await bot.wizard_arrival_handler(update, ctx)
         edit_call = update.callback_query.edit_message_text.call_args
         message_text = edit_call[0][0]

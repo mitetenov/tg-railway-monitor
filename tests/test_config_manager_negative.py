@@ -66,26 +66,26 @@ class TestConfigManagerNegative:
         with pytest.raises(RuntimeError):
             cm.load_config(chat_id)
 
-    # ── Save errors ─────────────────────────────────────────────────────
+    @pytest.mark.parametrize("value", [None, [], "config", 42])
+    def test_non_object_json_raises(self, value):
+        chat_id = 50005
+        with open(cm._config_path(chat_id), "w") as f:
+            json.dump(value, f)
 
-    @pytest.mark.skipif(os.geteuid() == 0, reason="root bypasses file permissions")
-    def test_save_to_readonly_raises(self):
-        """If the file is read-only, save should raise RuntimeError."""
-        import os as _os
-        if _os.geteuid() == 0:
-            pytest.skip("Root can write to read-only files")
-        chat_id = 50010
+        with pytest.raises(RuntimeError, match="root value must be a JSON object"):
+            cm.load_config(chat_id)
+
+    def test_clear_removes_unreadable_config(self):
+        chat_id = 50006
         path = cm._config_path(chat_id)
-        # Create a read-only file
         with open(path, "w") as f:
-            f.write("{}")
-        os.chmod(path, 0o444)
+            json.dump([], f)
 
-        try:
-            with pytest.raises(RuntimeError, match="Failed to save"):
-                cm.save_config(chat_id, {"key": "val"})
-        finally:
-            os.chmod(path, 0o644)  # cleanup
+        cm.clear_monitor_config(chat_id)
+
+        assert not os.path.exists(path)
+
+    # ── Save errors ─────────────────────────────────────────────────────
 
     def test_save_when_data_dir_is_file(self):
         """If data/ is a file instead of a directory, save should fail.
@@ -168,7 +168,7 @@ class TestConfigManagerNegative:
         config = {
             "from_station_code": "56014",
             "to_station_code": "57151",
-            "date": "2026-07-15",
+            "date": "2099-07-15",
             "seat_class": "Any",
             "extra_field": "ignored",
         }
@@ -186,28 +186,27 @@ class TestConfigManagerNegative:
         config = {
             "from_station_code": "56014",
             "to_station_code": "57151",
-            "date": "2026-07-15",
+            "date": "2099-07-15",
         }
         assert not cm.is_config_complete(config)
 
-    def test_none_values_count_as_present(self):
-        """If keys exist but are None, is_config_complete returns True."""
+    def test_none_values_are_not_complete(self):
         config = {
             "from_station_code": None,
             "to_station_code": None,
             "date": None,
             "seat_class": None,
         }
-        assert cm.is_config_complete(config)
+        assert not cm.is_config_complete(config)
 
-    def test_empty_string_values(self):
+    def test_empty_string_values_are_not_complete(self):
         config = {
             "from_station_code": "",
             "to_station_code": "",
             "date": "",
             "seat_class": "",
         }
-        assert cm.is_config_complete(config)
+        assert not cm.is_config_complete(config)
 
     # ── Thread safety simulation ────────────────────────────────────────
 

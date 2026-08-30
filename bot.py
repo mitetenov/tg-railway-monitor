@@ -24,10 +24,10 @@ import poller
 from api import get_stations
 from config_manager import (
     check_data_dir_writable,
-    delete_config,
+    clear_monitor_config,
     is_config_complete,
     load_config,
-    save_config,
+    save_monitor_config,
 )
 from i18n import (
     SUPPORTED_LANGUAGES,
@@ -37,6 +37,7 @@ from i18n import (
     translate_station_name,
 )
 from stations import FALLBACK_STATIONS, STATION_SLUGS
+from monitor_config import MonitorConfig
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -270,7 +271,7 @@ async def wizard_date_handler(update: Update, context) -> int:
 
     data = query.data
     if data == "cancel":
-        return await _wizard_cancel(update)
+        return await _wizard_cancel(update, context)
 
     chat_id = update.effective_chat.id
     t = get_user_translation(chat_id, update.effective_user)
@@ -358,7 +359,7 @@ async def wizard_departure_handler(update: Update, context) -> int:
 
     data = query.data
     if data == "cancel":
-        return await _wizard_cancel(update)
+        return await _wizard_cancel(update, context)
 
     chat_id = update.effective_chat.id
     t = get_user_translation(chat_id, update.effective_user)
@@ -423,7 +424,7 @@ async def wizard_arrival_handler(update: Update, context) -> int:
 
     data = query.data
     if data == "cancel":
-        return await _wizard_cancel(update)
+        return await _wizard_cancel(update, context)
 
     chat_id = update.effective_chat.id
     t = get_user_translation(chat_id, update.effective_user)
@@ -466,15 +467,7 @@ async def wizard_arrival_handler(update: Update, context) -> int:
         # Keep the English name for storage (canonical key)
         context.user_data["to_station"] = station.get("stationName", "?")
 
-        # Save route to config — store English canonical names
-        config = load_config(chat_id)
-        config["from_station"] = context.user_data["from_station"]
-        config["from_station_code"] = context.user_data["from_code"]
-        config["to_station"] = context.user_data["to_station"]
-        config["to_station_code"] = code
-        config["date"] = context.user_data.get("date", "")
-        save_config(chat_id, config)
-
+        # Keep the draft in memory; persist only after class selection.
         # Confirm route and proceed to class selection — translate for display
         from_name = translate_station_name(
             int(context.user_data.get("from_code", 0)),
@@ -515,14 +508,21 @@ async def wizard_class_handler(update: Update, context) -> int:
 
     data = query.data
     if data == "cancel":
-        return await _wizard_cancel(update)
+        return await _wizard_cancel(update, context)
 
     if data.startswith("wiz_class:"):
         cls = data.split(":", 1)[1]
         chat_id = update.effective_chat.id
-        config = load_config(chat_id)
-        config["seat_class"] = cls
-        save_config(chat_id, config)
+        existing = load_config(chat_id)
+        config = MonitorConfig.from_dict({
+            "from_station": context.user_data["from_station"],
+            "from_station_code": context.user_data["from_code"],
+            "to_station": context.user_data["to_station"],
+            "to_station_code": context.user_data["to_code"],
+            "date": context.user_data["date"],
+            "seat_class": cls,
+        })
+        save_monitor_config(chat_id, config, existing.get("language"))
 
         t = get_user_translation(chat_id, update.effective_user)
         await query.edit_message_text(
@@ -543,7 +543,7 @@ async def wizard_class_handler(update: Update, context) -> int:
     return CLASS_SELECT
 
 
-async def _wizard_cancel(update: Update) -> int:
+async def _wizard_cancel(update: Update, context) -> int:
     """Cancel the wizard and clean up."""
     query = update.callback_query
     if query:
@@ -551,6 +551,7 @@ async def _wizard_cancel(update: Update) -> int:
         chat_id = update.effective_chat.id
         t = get_user_translation(chat_id, update.effective_user)
         await query.edit_message_text(t("wizard.cancelled"))
+    context.user_data.clear()
     return ConversationHandler.END
 
 
@@ -626,7 +627,7 @@ async def cmd_stop(update: Update, _context) -> None:
     """Stop monitoring and clear all configuration."""
     chat_id = update.effective_chat.id
     poller.stop(chat_id)
-    delete_config(chat_id)
+    clear_monitor_config(chat_id)
     t = get_user_translation(chat_id, update.effective_user)
     await update.message.reply_text(t("stop.stopped"))
 

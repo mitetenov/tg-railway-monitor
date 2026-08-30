@@ -641,8 +641,8 @@ class TestTranslateStationName:
         assert "Batumi" in result
         result2 = t("wizard.class_set", class_name="Business")
         assert "Business" in result2
-        result3 = t("wizard.date_set", date="2026-07-15")
-        assert "2026-07-15" in result3
+        result3 = t("wizard.date_set", date="2099-07-15")
+        assert "2099-07-15" in result3
 
     def test_ru_wizard_sections(self):
         clear_cache()

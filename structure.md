@@ -1,208 +1,59 @@
-# Структура проекта `tg-ticket-monitor`
+# Архитектура проекта
 
-**Назначение:** Telegram-бот для мониторинга наличия железнодорожных билетов на сайте tre.ge (Грузинская железная дорога). Бот позволяет через Telegram-команды настроить маршрут, дату и класс, после чего автоматически опрашивает API и отправляет уведомления при появлении новых билетов или увеличении свободных мест.
-
----
-
-## Корень проекта `/root/tg-ticket-monitor`
+`tg-railway-monitor` — Telegram-бот, который отслеживает места на рейсах tre.ge.
+Единственный рабочий поток мониторинга — асинхронный: `bot.py` → `poller.py` →
+`TreGeApi`.
 
 ```
-tg-ticket-monitor/
-├── bot.py                       # ⚡ Точка входа — Telegram-бот
-├── ticket_monitor.py            # 🧠 Ядро: опрос API + diff состояний + нотификации
-├── api.py                       # 📡 Асинхронный клиент API tre.ge
-├── poller.py                    # 🔄 Фоновый asyncio-поллер (по одному на чат)
-├── config_manager.py            # ⚙️ Управление конфигурацией чатов (JSON)
-│
-├── Dockerfile                   # 🐳 Образ Docker (python:3-alpine)
-├── docker-compose.yml           # 🐳 Docker Compose с volume data/
-├── docker-entrypoint.sh         # 🏁 Генерация .env из переменных окружения
-├── deploy.sh                    # 🚀 Deploy-скрипт (устаревший — systemd legacy)
-├── tg-ticket-monitor.service    # ⚙️ Unit-файл systemd (legacy)
-├── DEPLOY.md                    # 📖 Документация по деплою (рекомендуется Docker)
-├── config.json                  # 📄 Пример конфигурации для standalone-режима
-├── monitor_state.json           # 💾 Сохранённое состояние (gitignored)
-├── requirements.txt             # 📦 Python-зависимости
-├── .env                         # 🔑 Секреты (gitignored, BOT_TOKEN)
-├── .env.example                 # 📋 Шаблон .env
-├── .gitignore                   # 🙈 Правила игнорирования Git
-│
-├── api_explorer.py              # 🔬 Интерактивный CLI-исследователь API
-├── _debug_updater.py            # 🐛 Проверка класса Updater telegram-bot
-├── _debug_slots.py              # 🐛 Анализ __slots__ и MRO Updater
-├── verify_imports.py            # 🗑️ Пустой файл-маркер (можно удалить)
-│
-├── data/                        # 📁 Пер-чатовые JSON-конфиги (gitignored)
-│   └── {chat_id}.json
-│
-├── tests/                       # 🧪 Тесты
-│   ├── test_api.py
-│   ├── test_config_manager.py
-│   ├── test_poller.py
-│   ├── test_ticket_monitor.py   # Основной файл с тестами
-│   └── check_syntax.py          # Проверка синтаксиса AST
-│
-├── sample_*.json                # 📊 Примеры данных от API tre.ge
-│
-├── .venv/                       # 🐍 Виртуальное окружение Python (gitignored)
-└── .git/                        # 📂 Git-репозиторий
+Telegram user
+  │ /start: дата → отправление → прибытие → класс
+  ▼
+bot.py ──► MonitorConfig ──► data/{chat_id}.json
+  │                              │
+  └──────────────────────────► poller.start()
+                                  │ every 60 seconds
+                                  ▼
+                        api.get_available_rides()
+                                  │
+                             tre.ge API
+                                  │
+                           snapshot diff
+                                  │
+                         Telegram notification
 ```
 
----
+## Основные модули
 
-## 1. Основные модули
-
-### `bot.py` — Точка входа и Telegram-интерфейс
-- **Роль:** Запускает `python-telegram-bot` Application, регистрирует команды и ConversationHandler'ы.
-- **Команды:**
-  - `/start` — приветствие, отображение текущей конфигурации
-  - `/setroute` — выбор станций отправления и прибытия (постраничный inline-клавиатурой)
-  - `/setdate` — ввод даты поездки (поддерживает `today`, `tomorrow`, `+N`, `YYYY-MM-DD`)
-  - `/setclass` — выбор класса (Any / Business / I / II)
-  - `/status` — текущая конфигурация и статус мониторинга
-  - `/stop` — остановка мониторинга
-- **Состояния ConversationHandler:** `FROM_STATION`, `TO_STATION`, `WAITING_DATE`, `WAITING_CLASS`
-- **Особенности:**
-  - Загружает станции из API при старте (с fallback-списком из 17 популярных станций)
-  - При завершении конфигурации автоматически запускает поллер через `poller.start()`
-  - Fallback-обработчик для неизвестных команд
-
-### `ticket_monitor.py` — Ядро мониторинга
-- **Роль:** Независимый класс `TicketMonitor` с фоновым threading-поллером. Не имеет внешних зависимостей — использует только Python stdlib (`urllib`, `threading`, `json`).
-- **Классы:**
-  - `RouteConfig` — dataclass с настройками маршрута (коды станций, дата, фильтр класса, кол-во пассажиров). Автозаполняет названия станций и дату по умолчанию (завтра).
-  - `TicketState` — сериализуемый снимок известных билетов `{route_key: {ride_num: {class_id: {seats, price}}}}`.
-  - `TicketMonitor` — основной класс с методами `start()`, `stop()`, `poll_once()`, `on_change()`.
-- **Детектируемые изменения:** `new_ticket` (новый класс билетов) и `seats_increased` (увеличилось число мест).
-- **Форматирование:** Готовое Telegram-сообщение с маркдауном, эмодзи и деталями рейса.
-- **Публичный API ключ:** `7d8d34d1-e9af-4897-9f0f-5c36c179be77` (встроен в клиентский JS tre.ge, не является секретом).
-
-### `api.py` — Асинхронный API-клиент
-- **Роль:** Асинхронные обёртки (`aiohttp`) для трёх эндпоинтов tre.ge.
-- **Функции:**
-  - `get_stations(session)` — получение списка станций
-  - `get_available_rides(session, from_code, to_code, date_str, passengers=1)` — рейсы на дату
-  - `get_availability_calendar(session, from_code, to_code)` — календарь доступности на 30 дней
-  - `fetch_json(session, url, label)` — вспомогательная утилита
-- **Базовый URL:** `https://gateway.tre.ge/integrations/api/GeorgianRailway`
-
-### `poller.py` — Фоновый asyncio-поллер
-- **Роль:** Управление per-chat задачами опроса API. Создаёт асинхронную задачу для каждого чата, проверяет билеты каждые 60 секунд.
-- **Функции модуля:**
-  - `start(bot, chat_id)` — запуск/перезапуск поллера для чата
-  - `stop(chat_id)` — остановка поллера для чата
-  - `is_running(chat_id)` — проверка активности поллера
-  - `active_count()` — кол-во активных мониторов
-- **Анти-spam:** Ведёт `_notified` — отслеживает уже отправленные уведомления по комбинации `rideNumber:className`.
-
-### `config_manager.py` — Управление конфигурацией
-- **Роль:** CRUD для per-chat JSON-конфигов в `data/{chat_id}.json`.
-- **Функции:** `load_config()`, `save_config()`, `delete_config()`, `is_config_complete()`.
-
----
-
-## 2. Инфраструктура и деплой
-
-### `Dockerfile`
-- **Базовый образ:** `python:3-alpine`
-- **Установка:** `tzdata` для часовых поясов, pip-зависимости из `requirements.txt`
-- **Пользователь:** Непривилегированный `monitor`
-- **Точка входа:** `docker-entrypoint.sh` → генерирует `.env`, запускает `bot.py`
-
-### `docker-compose.yml`
-- **Сервис:** `bot` (build: `.`), `restart: unless-stopped`
-- **Переменные окружения:** Из `.env` + опциональные `ROUTE`, `DATE`, `CLASS`
-- **Volume:** `data:/app/data` для сохранения конфигов между перезапусками
-
-### `deploy.sh`
-- Создаёт системного пользователя `tg-ticket-mon`
-- Настраивает права доступа
-- Устанавливает systemd-сервис
-
-### `tg-ticket-monitor.service`
-- **Пользователь:** `tg-ticket-mon`
-- **Рабочая директория:** `/root/tg-ticket-monitor`
-- **Команда:** `.venv/bin/python3 bot.py`
-- **Безопасность:** `NoNewPrivileges=true`, `PrivateTmp=true`, `ProtectSystem=full`, `ProtectHome=read-only`
-- **Чтение/запись:** только `/root/tg-ticket-monitor/data`
-
----
-
-## 3. Диагностические скрипты
-
-| Файл | Назначение |
+| Модуль | Ответственность |
 |---|---|
-| `api_explorer.py` | CLI-инструмент для исследования API tre.ge: станции, популярные маршруты, календарь, рейсы |
-| `_debug_updater.py` | Просмотр исходного кода `Updater.__init__` из telegram-bot |
-| `_debug_slots.py` | Анализ `__slots__` и MRO иерархии классов `Updater` |
-| `verify_imports.py` | Пустой маркер |
+| `bot.py` | Команды `/start`, `/stop`, `/lang` и мастер настройки. Черновик маршрута хранится в памяти до выбора класса. |
+| `monitor_config.py` | Неизменяемая валидированная конфигурация маршрута, даты и класса; правило истечения даты. |
+| `config_manager.py` | Атомарное хранение конфигураций и снимков состояний в `data/`. Язык сохраняется отдельно от настроек мониторинга. |
+| `poller.py` | Одна `asyncio`-задача на чат, восстановление после рестарта, дифф снимков и подтверждённая доставка. Снимок обновляется только после удачной отправки. |
+| `ticket_domain.py` | Канонические идентификаторы классов мест tre.ge и отображаемые названия. |
+| `_api_base.py`, `api.py`, `api_tre.py` | Контракт провайдера, его выбор и реализация tre.ge. |
+| `stations.py` | Единственный источник кодов, названий и URL-slug станций. |
+| `i18n.py` | Локализация EN/RU и сохранение языка чата. |
 
----
+## Состояние мониторинга
 
-## 4. Тесты (`tests/`)
+Конфигурация `data/{chat_id}.json` содержит только валидные поля маршрута, даты
+и класса (плюс опциональный `language`). Снимок `data/{chat_id}.state.json`
+хранит последний успешно доставленный результат. Ключ снимка включает маршрут,
+дату и выбранный класс, поэтому смена любого из них не подавляет новое
+уведомление.
 
-| Файл | Тип | Описание |
-|---|---|---|
-| `test_ticket_monitor.py` | unittest | **Основной тестовый файл** (406 строк). Тестирует: RouteConfig (автозаполнение), форматирование сообщений, diff состояний (first poll, no changes, seats increased, API failure, class filter), загрузку конфигов, state save/load, live API integration, background thread start/stop, on_change callback |
-| `test_config_manager.py` | pytest | CRUD конфигов, Unicode, проверка полноты конфига |
-| `test_api.py` | pytest | Константы API, сигнатуры функций |
-| `test_poller.py` | pytest | Формат ключа уведомлений, start/stop без краша |
-| `check_syntax.py` | Скрипт | AST-проверка синтаксиса всех модулей |
+Если места исчезли, пустой снимок сохраняется. При их появлении снова даже с
+тем же числом мест это считается новым доступным предложением и уведомляется.
 
----
+## Тесты
 
-## 5. Данные и примеры
+Тесты изолируют файловое хранилище и сетевой API. Важные проверки сосредоточены
+в следующих файлах:
 
-| Файл | Описание |
-|---|---|
-| `data/{chat_id}.json` | Per-чатовые конфигурации (автоматически, gitignored) |
-| `monitor_state.json` | Сохранённое состояние `TicketMonitor` (автоматически, gitignored) |
-| `config.json` | Пример конфигурации (Tbilisi ↔ Batumi, 2026-06-27) |
-| `sample_availability_today.json` | Пример ответа API available-rides (сегодня) |
-| `sample_availability_tomorrow.json` | Пример ответа API available-rides (завтра) |
-| `sample_calendar.json` | Пример ответа API availability-calendar |
-| `sample_rides.json` | Пример ответа API available-rides |
-| `sample_stations.json` | Пример ответа API civil-stations |
+- `test_bot.py` — полный пользовательский мастер и команды;
+- `test_monitor_config.py` и `test_config_manager*.py` — валидация и надёжное хранение;
+- `test_poller_delivery.py`, `test_poller_negative.py`, `test_poller_restore.py` — доставка, ошибки, перезапуск и снимки;
+- `test_api*.py`, `test_i18n.py`, `test_stations_dictionary.py`, `test_utils.py` — контракты интеграций и чистые функции.
 
----
-
-## 6. Зависимости
-
-Указаны в `requirements.txt`:
-- `python-telegram-bot >=20.0,<21.0` — Telegram Bot API
-- `aiohttp >=3.9,<4.0` — Асинхронный HTTP-клиент
-- `python-dotenv >=1.0` — Загрузка `.env`
-
----
-
-## 7. Поток данных (Data Flow)
-
-```
-Telegram User
-    │
-    ▼  команды (/setroute, /setdate, /setclass)
-bot.py ────────────────────► config_manager.py ──► data/{chat_id}.json
-    │
-    │  при завершении конфигурации:
-    └─► poller.start()
-            │
-            ▼  каждые 60 секунд
-        poller._check_and_notify()
-            │
-            ├─► api.get_available_rides() ──► tre.ge API
-            │
-            └─► при новых билетах:
-                    └─► bot.send_message() ──► Telegram User
-```
-
-Альтернативный поток (standalone `TicketMonitor`, не через бота):
-```
-ticket_monitor.TicketMonitor
-    │
-    ├─► start()  ──► _poll_loop() (threading)
-    │
-    └─► poll_once()
-            ├─► _fetch_rides()  ──► urllib ──► tre.ge API
-            ├─► diff с _state.routes
-            └─► on_change callbacks
-```
+Запуск: `pytest -v`.

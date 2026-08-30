@@ -248,7 +248,7 @@ class TestSetUserLanguage:
             json.dump({
                 "from_station": "Tbilisi",
                 "to_station": "Batumi",
-                "date": "2026-07-15",
+                "date": "2099-07-15",
                 "seat_class": "Any",
             }, f)
 
@@ -257,7 +257,7 @@ class TestSetUserLanguage:
         with open(path, encoding="utf-8") as f:
             config = json.load(f)
         assert config["from_station"] == "Tbilisi"
-        assert config["date"] == "2026-07-15"
+        assert config["date"] == "2099-07-15"
         assert config["language"] == "ru"
 
     def test_get_user_translation_picks_up_change(self):
@@ -449,7 +449,7 @@ class TestIntegrationFullFlow:
             json.dump({
                 "from_station": "Tbilisi",
                 "to_station": "Batumi",
-                "date": "2026-07-15",
+                "date": "2099-07-15",
                 "seat_class": "Any",
             }, f)
 
@@ -461,5 +461,5 @@ class TestIntegrationFullFlow:
         with open(path, encoding="utf-8") as f:
             config = json.load(f)
         assert config["from_station"] == "Tbilisi"
-        assert config["date"] == "2026-07-15"
+        assert config["date"] == "2099-07-15"
         assert config["language"] == "ru"

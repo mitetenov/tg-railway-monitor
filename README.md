@@ -244,7 +244,7 @@ BOT_TOKEN=your_bot_token_here
 ```
 tg-railway-monitor/
 ├── bot.py                       # ⚡ Точка входа — Telegram-бот
-├── ticket_monitor.py            # 🧠 Ядро: опрос API + diff состояний + нотификации
+├── ticket_domain.py             # 🎫 Общие идентификаторы и названия классов мест
 ├── api.py                       # 📡 Фабрика API-клиентов + обратно-совместимые алиасы
 ├── api_tre.py                   # 📡 Реализация TreGeApi (поиск рейсов, билдер URL покупки)
 ├── _api_base.py                 # 📡 Абстрактный базовый класс TicketApi + константы
@@ -289,13 +289,11 @@ tg-railway-monitor/
     ├── test_config_manager.py
     ├── test_config_manager_negative.py
     ├── test_i18n.py
-    ├── test_poller.py
-    ├── test_poller_grouped.py
+    ├── test_monitor_config.py
+    ├── test_poller_delivery.py
     ├── test_poller_negative.py
-    ├── test_poller_purchase_url.py
-    ├── test_poller_time_format.py
-    ├── test_ticket_monitor.py
-    ├── test_ticket_monitor_negative.py
+    ├── test_poller_restore.py
+    ├── test_utils.py
     ├── test_user_lang.py
     └── check_syntax.py
 ```
@@ -305,12 +303,12 @@ tg-railway-monitor/
 | Модуль | Назначение |
 |--------|-----------|
 | `bot.py` | Точка входа. Регистрирует команды (`/start`, `/stop`, `/lang`), ConversationHandler мастера настройки (5 состояний), загружает станции при старте. |
-| `ticket_monitor.py` | Ядро мониторинга. Класс `TicketMonitor` с фоновым threading-поллером. Без внешних зависимостей — только Python stdlib. |
+| `ticket_domain.py` | Общий словарь классов мест и их идентификаторов tre.ge для активного потока. |
 | `api.py` | Фабрика API-клиентов. `get_ticket_api(source)` возвращает экземпляр `TicketApi`. Обратно-совместимые алиасы (`get_stations`, `get_available_rides`, `get_availability_calendar`) делегируют синглтону. |
 | `api_tre.py` | Конкретная реализация `TreGeApi(TicketApi)`: поиск рейсов (`search_trips`), получение станций, билдер ссылки на покупку (`build_purchase_url`). |
 | `_api_base.py` | Абстрактный класс `TicketApi` (ABC) с 5 абстрактными методами и константы `API_BASE`, `API_KEY`. |
-| `poller.py` | Фоновый asyncio-поллер. Управляет per-chat задачами опроса API каждые 60 секунд. Состояние отслеживается через `_state` dict с посекундным диффом. Поддерживает `pause()`/`resume()`/`is_paused()`. |
-| `config_manager.py` | CRUD для per-chat JSON-конфигов в `data/{chat_id}.json`. |
+| `poller.py` | Фоновый asyncio-поллер. Управляет per-chat задачами опроса каждые 60 секунд; сохраняет снимок только после успешной отправки и поддерживает `pause()`/`resume()`/`is_paused()`. |
+| `config_manager.py` | Атомарный CRUD для per-chat JSON-конфигов и снимков состояния в `data/{chat_id}.json`. |
 | `i18n.py` | Система интернационализации: класс `Translation` с интерполяцией и плюрализацией, автоопределение языка из профиля Telegram, `set_user_language()`, `translate_station_name()` с поддержкой EN/RU/KA названий. |
 | `stations.py` | Единый источник данных о станциях: мастер-список `_STATION_DATA`, производные маппинги (code→data, slug→code), вспомогательные функции. |
 | `utils.py` | Вспомогательные функции: `format_time()`, `fmt_duration()`. |
@@ -329,7 +327,7 @@ tg-railway-monitor/
 |----------|----------|----------------|
 | `GET /Dictionaries/civil-stations` | Список станций (латиница) | `bot.py`, `api_tre.py` |
 | `GET /Availability/availability-calendar` | Календарь доступности на 30 дней | `api_explorer.py` |
-| `GET /Availability/available-rides` | Рейсы с классами, ценами и местами | `poller.py`, `ticket_monitor.py` |
+| `GET /Availability/available-rides` | Рейсы с классами, ценами и местами | `poller.py` |
 | `GET /Availability/availability-time-table` | Сводка популярных маршрутов | `api_explorer.py` |
 
 > **API-ключ публичный:** `7d8d34d1-e9af-4897-9f0f-5c36c179be77` — вшит в клиентский JS tre.ge, не является секретом.
