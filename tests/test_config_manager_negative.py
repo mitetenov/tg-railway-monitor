@@ -66,6 +66,25 @@ class TestConfigManagerNegative:
         with pytest.raises(RuntimeError):
             cm.load_config(chat_id)
 
+    @pytest.mark.parametrize("value", [None, [], "config", 42])
+    def test_non_object_json_raises(self, value):
+        chat_id = 50005
+        with open(cm._config_path(chat_id), "w") as f:
+            json.dump(value, f)
+
+        with pytest.raises(RuntimeError, match="root value must be a JSON object"):
+            cm.load_config(chat_id)
+
+    def test_clear_removes_unreadable_config(self):
+        chat_id = 50006
+        path = cm._config_path(chat_id)
+        with open(path, "w") as f:
+            json.dump([], f)
+
+        cm.clear_monitor_config(chat_id)
+
+        assert not os.path.exists(path)
+
     # ── Save errors ─────────────────────────────────────────────────────
 
     def test_save_when_data_dir_is_file(self):

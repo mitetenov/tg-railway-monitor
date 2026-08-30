@@ -44,3 +44,9 @@ def test_round_trip_preserves_monitoring_fields():
 def test_invalid_monitor_configs_are_rejected(overrides):
     with pytest.raises(ConfigValidationError):
         MonitorConfig.from_dict(_valid_config(**overrides))
+
+
+@pytest.mark.parametrize("data", [None, [], "config", 42])
+def test_non_object_monitor_configs_are_rejected(data):
+    with pytest.raises(ConfigValidationError, match="JSON object"):
+        MonitorConfig.from_dict(data)

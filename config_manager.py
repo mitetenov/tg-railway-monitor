@@ -113,7 +113,13 @@ def load_config(chat_id: int) -> dict:
         return {}
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
+            config = json.load(f)
+        if not isinstance(config, dict):
+            raise RuntimeError(
+                f"Failed to load config for chat {chat_id} from {path}: "
+                "root value must be a JSON object"
+            )
+        return config
     except (json.JSONDecodeError, IOError, OSError) as e:
         raise RuntimeError(
             f"Failed to load config for chat {chat_id} from {path}: {e}"
@@ -146,7 +152,12 @@ def delete_config(chat_id: int) -> None:
 
 def clear_monitor_config(chat_id: int) -> None:
     """Remove monitor settings and state while preserving interface language."""
-    config = load_config(chat_id)
+    try:
+        config = load_config(chat_id)
+    except RuntimeError as error:
+        logger.warning("Removing unreadable config for chat %d: %s", chat_id, error)
+        delete_config(chat_id)
+        return
     language = config.get("language")
     if language:
         save_config(chat_id, {"language": language})

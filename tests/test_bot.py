@@ -728,7 +728,7 @@ class TestWizardClassSelection:
             result = await bot.wizard_class_handler(update, ctx)
 
         assert result == bot.ConversationHandler.END
-        mock_poller_start.assert_called_once_with(ctx.bot, 12345, reset_snapshot=True)
+        mock_poller_start.assert_called_once_with(ctx.bot, 12345)
 
     @pytest.mark.asyncio
     async def test_select_class_i(self):

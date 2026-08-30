@@ -1,4 +1,5 @@
 """Delivery guarantees for the polling change detector."""
+import asyncio
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -34,8 +35,12 @@ def isolated_poller_state(tmp_path):
     previous_data_dir = config_manager.DATA_DIR
     config_manager.DATA_DIR = str(tmp_path)
     poller._state.clear()
+    for chat_id in list(poller._running_tasks):
+        poller.stop(chat_id)
     yield
     poller._state.clear()
+    for chat_id in list(poller._running_tasks):
+        poller.stop(chat_id)
     config_manager.DATA_DIR = previous_data_dir
 
 
@@ -97,8 +102,29 @@ async def test_identical_snapshot_is_suppressed_after_successful_delivery():
     assert bot.send_message.await_count == 1
 
 
-def test_expired_monitor_is_cleared_but_language_is_retained():
+@pytest.mark.asyncio
+async def test_legacy_snapshot_key_is_migrated_without_duplicate_notification():
     chat_id = 40_004
+    _configure(chat_id)
+    config_manager.save_state(chat_id, {
+        "key": "56014>57151@2099-07-15",
+        "rides": {"812": {"1": {"seats": 5, "price": 76}}},
+    })
+    bot = MagicMock(send_message=AsyncMock())
+
+    with patch("poller.get_session", AsyncMock(return_value=MagicMock())), \
+         patch("poller.get_available_rides", AsyncMock(return_value=_response(5))):
+        await poller._check_and_notify(bot, chat_id)
+
+    bot.send_message.assert_not_awaited()
+    assert config_manager.load_state(chat_id)["key"] == (
+        "56014>57151@2099-07-15#Any"
+    )
+
+
+@pytest.mark.asyncio
+async def test_expired_monitor_is_cleared_and_removed_from_registry():
+    chat_id = 40_005
     config_manager.save_config(chat_id, {
         "from_station_code": "56014",
         "to_station_code": "57151",
@@ -108,6 +134,11 @@ def test_expired_monitor_is_cleared_but_language_is_retained():
     })
     config_manager.save_state(chat_id, {"key": "old", "rides": {}})
 
-    assert poller._expire_if_needed(chat_id)
+    task = asyncio.create_task(poller._poller_loop(MagicMock(), chat_id))
+    poller._running_tasks[chat_id] = task
+    await task
+
     assert config_manager.load_config(chat_id) == {"language": "ru"}
     assert config_manager.load_state(chat_id) == {}
+    assert chat_id not in poller._running_tasks
+    assert poller.active_count() == 0

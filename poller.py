@@ -81,6 +81,14 @@ def _route_key(config: dict) -> str:
     )
 
 
+def _legacy_route_key(config: dict) -> str:
+    """Return the state key format used before seat class was included."""
+    return (
+        f"{config.get('from_station_code', '')}>"
+        f"{config.get('to_station_code', '')}@{config.get('date', '')}"
+    )
+
+
 def _get_rides_state(chat_id: int, config: dict) -> dict:
     """Return the stored per-ride snapshot for the chat's current route.
 
@@ -93,11 +101,19 @@ def _get_rides_state(chat_id: int, config: dict) -> dict:
         entry = load_state(chat_id)
         _state[chat_id] = entry
 
-    if entry.get("key") != _route_key(config):
-        entry = {"key": _route_key(config), "rides": {}}
+    current_key = _route_key(config)
+    if entry.get("key") == _legacy_route_key(config):
+        entry["key"] = current_key
+        save_state(chat_id, entry)
+    elif entry.get("key") != current_key:
+        entry = {"key": current_key, "rides": {}}
         _state[chat_id] = entry
 
-    return entry.setdefault("rides", {})
+    rides = entry.setdefault("rides", {})
+    if not isinstance(rides, dict):
+        rides = {}
+        entry["rides"] = rides
+    return rides
 
 
 def _snapshot_from_rides(rides: list[dict], seat_class: str) -> tuple[dict, dict]:
@@ -269,6 +285,10 @@ async def _poller_loop(bot: Bot, chat_id: int) -> None:
     except asyncio.CancelledError:
         logger.info("Polling cancelled for chat %d", chat_id)
         raise
+    finally:
+        current_task = asyncio.current_task()
+        if _running_tasks.get(chat_id) is current_task:
+            _running_tasks.pop(chat_id, None)
 
 
 def start(bot: Bot, chat_id: int, *, reset_snapshot: bool = False) -> None:

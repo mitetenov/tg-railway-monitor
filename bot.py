@@ -531,7 +531,7 @@ async def wizard_class_handler(update: Update, context) -> int:
         )
 
         # Start monitoring
-        poller.start(context.bot, chat_id, reset_snapshot=True)
+        poller.start(context.bot, chat_id)
         await query.message.reply_text(
             t("wizard.monitoring_started"),
             parse_mode="Markdown",

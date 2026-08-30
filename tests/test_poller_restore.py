@@ -141,6 +141,21 @@ class TestRestoreAll:
             _cleanup(91012)
             _cleanup(91013)
 
+    def test_non_object_config_does_not_abort_restore(self):
+        """A valid JSON value with the wrong shape must not block other chats."""
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(os.path.join(DATA_DIR, "91014.json"), "w") as f:
+            json.dump([], f)
+        _write_config(91015)
+        try:
+            with patch("poller.start") as mock_start:
+                restored = restore_all(MagicMock())
+            assert restored >= 1
+            assert any(call.args[1] == 91015 for call in mock_start.call_args_list)
+        finally:
+            _cleanup(91014)
+            _cleanup(91015)
+
 
 # ═══════════════════════ State persistence ═══════════════════════════
 

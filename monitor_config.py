@@ -22,8 +22,10 @@ class MonitorConfig:
     to_station: str = ""
 
     @classmethod
-    def from_dict(cls, data: dict) -> "MonitorConfig":
+    def from_dict(cls, data: object) -> "MonitorConfig":
         """Create a configuration after validating persisted values."""
+        if not isinstance(data, dict):
+            raise ConfigValidationError("monitor config must be a JSON object")
         from_code = data.get("from_station_code")
         to_code = data.get("to_station_code")
         travel_date = data.get("date")
