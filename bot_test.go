@@ -212,7 +212,7 @@ func TestWizardStationsAndStaleCallbacks(t *testing.T) {
 		t.Fatal("invalid class accepted")
 	}
 	for _, page := range []int{-100, 0, 1, 999} {
-		keyboard := h.b.stationKeyboard("ru", "wiz_from", page)
+		keyboard := h.b.stationKeyboard("ru", "wiz_from", page, "")
 		for _, row := range keyboard.Rows {
 			for _, b := range row {
 				if b.Data == "wiz_from:57530" {
@@ -626,7 +626,7 @@ func TestWizardDepartureChoicesPersistAndRender(t *testing.T) {
 	}
 	chosen := departure{time: "08:00", number: "812"}
 	keyboard := requestKeyboard(t, h.last())
-	if !keyboardHas(keyboard, chosen.callback()) || !keyboardHas(keyboard, "wiz_time:any") {
+	if !keyboardHas(keyboard, chosen.callback()) || !keyboardHas(keyboard, "wiz_time:any") || keyboardHas(keyboard, "wiz_time:reload") {
 		t.Fatal("missing sold-out departure or any-time option", keyboard)
 	}
 	h.handle(t, cb(1, 1, "wiz_class:Any"))
@@ -634,7 +634,7 @@ func TestWizardDepartureChoicesPersistAndRender(t *testing.T) {
 		t.Fatal("class callback skipped departure selection")
 	}
 	h.handle(t, cb(1, 1, "lang_set:en"))
-	if !strings.Contains(h.last().Body["text"].(string), "Select departure time") || !keyboardHas(requestKeyboard(t, h.last()), chosen.callback()) {
+	if !strings.Contains(h.last().Body["text"].(string), "Select departure time") || !keyboardHas(requestKeyboard(t, h.last()), chosen.callback()) || keyboardHas(requestKeyboard(t, h.last()), "wiz_time:reload") {
 		t.Fatal("language switch lost departure choices")
 	}
 	h.handle(t, cb(1, 1, chosen.callback()))
@@ -665,12 +665,12 @@ func TestWizardDepartureFailureEmptyRetryAndPagination(t *testing.T) {
 	for _, data := range []string{"search:add", "wiz_date:tomorrow", "wiz_from:56014", "wiz_to:57151"} {
 		h.handle(t, cb(1, 1, data))
 	}
-	if !strings.Contains(h.last().Body["text"].(string), "Не удалось загрузить рейсы") || !keyboardHas(requestKeyboard(t, h.last()), "wiz_time:any") {
+	if !strings.Contains(h.last().Body["text"].(string), "Не удалось загрузить рейсы") || !keyboardHas(requestKeyboard(t, h.last()), "wiz_time:any") || !keyboardHas(requestKeyboard(t, h.last()), "wiz_time:reload") {
 		t.Fatal("failed request blocked wizard", h.last())
 	}
 	a.err = nil
 	h.handle(t, cb(1, 1, "wiz_time:reload"))
-	if !strings.Contains(h.last().Body["text"].(string), "рейсы не найдены") {
+	if !strings.Contains(h.last().Body["text"].(string), "рейсы не найдены") || !keyboardHas(requestKeyboard(t, h.last()), "wiz_time:reload") {
 		t.Fatal("empty result was not explained", h.last())
 	}
 	for i := 0; i < 10; i++ {
@@ -679,11 +679,11 @@ func TestWizardDepartureFailureEmptyRetryAndPagination(t *testing.T) {
 	h.handle(t, cb(1, 1, "wiz_time:reload"))
 	w := h.b.wizards[[2]int64{1, 1}]
 	stale := w.departures[0].callback()
-	if !keyboardHas(requestKeyboard(t, h.last()), "page:wiz_time:1") || keyboardHas(requestKeyboard(t, h.last()), w.departures[8].callback()) {
+	if !keyboardHas(requestKeyboard(t, h.last()), "page:wiz_time:1") || keyboardHas(requestKeyboard(t, h.last()), w.departures[8].callback()) || keyboardHas(requestKeyboard(t, h.last()), "wiz_time:reload") {
 		t.Fatal("wrong first departure page")
 	}
 	h.handle(t, cb(1, 1, "page:wiz_time:999"))
-	if !keyboardHas(requestKeyboard(t, h.last()), w.departures[9].callback()) || !keyboardHas(requestKeyboard(t, h.last()), "page:wiz_time:0") {
+	if !keyboardHas(requestKeyboard(t, h.last()), w.departures[9].callback()) || !keyboardHas(requestKeyboard(t, h.last()), "page:wiz_time:0") || keyboardHas(requestKeyboard(t, h.last()), "wiz_time:reload") {
 		t.Fatal("wrong last departure page")
 	}
 	for _, data := range []string{"wiz_time:unknown", "wiz_time:-1", "page:wiz_time:bad"} {
@@ -713,8 +713,75 @@ func TestWizardKeepsAvailableDeparturesForMissingTimetableRoute(t *testing.T) {
 			h.handle(t, cb(1, 1, data))
 		}
 		keyboard := requestKeyboard(t, h.last())
-		if !keyboardHas(keyboard, (departure{time: "00:30", number: "812"}).callback()) || !keyboardHas(keyboard, "wiz_time:any") || !strings.Contains(h.last().Body["text"].(string), "Показаны рейсы, на которые сейчас есть билеты") {
+		if !keyboardHas(keyboard, (departure{time: "00:30", number: "812"}).callback()) || !keyboardHas(keyboard, "wiz_time:any") || keyboardHas(keyboard, "wiz_time:reload") || !strings.Contains(h.last().Body["text"].(string), "Показаны рейсы, на которые сейчас есть билеты") {
 			t.Fatal("incomplete timetable removed available choices or hid limited coverage", h.last())
 		}
+	}
+}
+
+func TestArrivalChoicesExcludeDepartureOnEveryPageAndRecovery(t *testing.T) {
+	for _, from := range []string{"56014", "57151", "57450"} {
+		t.Run(from, func(t *testing.T) {
+			h := newHarness(t)
+			for _, data := range []string{"search:add", "wiz_date:tomorrow"} {
+				h.handle(t, cb(1, 1, data))
+			}
+			if !keyboardHas(requestKeyboard(t, h.last()), "wiz_from:56014") || !keyboardHas(requestKeyboard(t, h.last()), "wiz_from:57151") {
+				t.Fatal("departure choices were filtered")
+			}
+			h.handle(t, cb(1, 1, "wiz_from:"+from))
+			// Both the first arrival keyboard and error recovery must omit the
+			// departure, while stale same-station callbacks remain rejected.
+			for _, callback := range []string{"", "wiz_to:" + from, "wiz_to:00000"} {
+				if callback != "" {
+					h.handle(t, cb(1, 1, callback))
+				}
+				keyboard := requestKeyboard(t, h.last())
+				if keyboardHas(keyboard, "wiz_to:"+from) || !keyboardHas(keyboard, "wiz_to:all") || h.b.wizards[[2]int64{1, 1}].step != "to" {
+					t.Fatal("departure offered as arrival or invalid callback accepted", keyboard)
+				}
+				for _, code := range []string{"56014", "57151"} {
+					if code != from && !keyboardHas(keyboard, "wiz_to:"+code) {
+						t.Fatal("another quick arrival disappeared", code)
+					}
+				}
+			}
+			expected := make(map[string]bool)
+			for _, s := range h.b.stations {
+				code := string(s.Code)
+				if code != from && code != "56014" && code != "57151" {
+					expected[code] = true
+				}
+			}
+			h.handle(t, cb(1, 1, "wiz_to:all"))
+			seen := make(map[string]bool)
+			pages := max(1, (len(expected)+7)/8)
+			for page := 0; page < pages; page++ {
+				if page > 0 {
+					h.handle(t, cb(1, 1, fmt.Sprintf("page:wiz_to:%d", page)))
+				}
+				keyboard := requestKeyboard(t, h.last())
+				count := 0
+				for _, row := range keyboard.Rows {
+					for _, b := range row {
+						if !strings.HasPrefix(b.Data, "wiz_to:") {
+							continue
+						}
+						code := strings.TrimPrefix(b.Data, "wiz_to:")
+						if !expected[code] || seen[code] {
+							t.Fatal("excluded, duplicate or unexpected arrival", code)
+						}
+						seen[code] = true
+						count++
+					}
+				}
+				if count != min(8, len(expected)-page*8) {
+					t.Fatal("station filtering left an incorrect page size", page, count)
+				}
+			}
+			if len(seen) != len(expected) {
+				t.Fatal("arrival pagination omitted another station", len(seen), len(expected))
+			}
+		})
 	}
 }
