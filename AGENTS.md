@@ -29,11 +29,11 @@ contains 160 notification cases captured from committed Python HEAD `4442a00`.
 | File | Purpose |
 |---|---|
 | `main.go` | Environment, HTTP clients, signal handling, startup |
-| `bot.go` | Sequential Telegram update loop and per-chat/per-user wizard |
+| `bot.go` | Search list/cards, sequential Telegram update loop and per-chat/per-user wizard |
 | `telegram.go` | Telegram Bot API HTTP client, JSON models, safe errors |
 | `railway.go` | tre.ge station/search client, purchase URLs, class filters |
-| `poller.go` | One cancellable goroutine per chat, availability diff and delivery |
-| `storage.go` | Atomic per-chat JSON config and snapshot files |
+| `poller.go` | One cancellable goroutine per search, availability diff and delivery |
+| `storage.go` | Atomic per-chat search lists and per-search snapshot files |
 | `i18n.go` | Embedded translations and station dictionary |
 | `stations.json` | Single source of station names/codes/popularity/slugs |
 | `locales/{en,ru}/messages.json` | User-facing translations |
@@ -41,22 +41,36 @@ contains 160 notification cases captured from committed Python HEAD `4442a00`.
 
 Only `/start`, `/stop`, `/lang` are registered commands. Do not restore removed
 `/setroute`, `/setdate`, `/setclass`, `/status` commands. Wizard steps: date,
-custom date, departure, arrival, class. Old callback strings remain supported.
+custom date, departure, arrival, class. `/start` opens the search list; the inline
+add button starts the wizard. Search cards offer pause/resume and confirmed
+deletion. Lists use eight searches per page and include paused searches.
+Old wizard callback strings remain supported.
 Travel dates always use **Asia/Tbilisi**, regardless of user/host timezone.
 
-Wizard drafts remain in memory until class selection; cancellation preserves the
-previous active route. Language buttons work during any wizard step. `/stop`
-cancels the worker, waits for it to exit, clears monitor fields/state while preserving language, and clears drafts.
+Wizard drafts remain in memory until class selection; completing the wizard
+adds a new search without replacing existing ones. Cancellation returns to the
+list. Language buttons work during any wizard step. `/stop` cancels all workers
+in the chat, waits for them to exit, deletes all searches/snapshots while
+preserving language, and clears all drafts for that chat.
 
 ## Persistence and polling
 
-- Config: `data/{chat_id}.json`. Keys are compatible with the Python version:
+- Config: `data/{chat_id}.json` contains chat-level `language` (`en`, `ru`) and
+  `searches`. Each search has a stable random 16-hex-character `id`, `paused`,
   `from_station_code`, `to_station_code`, `from_station`, `to_station`, `date`,
-  `seat_class` (`Any`, `I`, `II`, `Business`), `language` (`en`, `ru`).
-- Snapshot: `data/{chat_id}.state.json`: `key` is `from>to@date#class`; legacy keys without the class are migrated; `rides` maps
+  and `seat_class` (`Any`, `I`, `II`, `Business`). Legacy single-route configs
+  become one search with ID `legacy`; the next mutation writes the new format.
+- Snapshot: `data/{chat_id}.{search_id}.state.json`; the migrated `legacy` search
+  retains `data/{chat_id}.state.json` to preserve its notification baseline.
+  `key` is `from>to@date#class`; legacy keys without the class are migrated; `rides` maps
   ride numbers to class IDs, each containing `seats` and `price`.
 - JSON writes use a private temporary file, fsync, and atomic rename.
-- Complete configurations resume automatically on startup. Past travel dates expire at Georgian midnight, preserving the interface language and clearing monitor state. Snapshots suppress
+- Active searches resume automatically on startup. Paused searches stay paused
+  across restarts and keep snapshots; resuming checks immediately without
+  reannouncing unchanged seats. Pause/delete cancel and join only that worker.
+  Past travel dates expire at Georgian midnight, preserving the interface
+  language and other searches. Paused searches expire on startup or navigation.
+  Snapshots suppress
   duplicate notifications after restart. Corrupt configs are logged/skipped;
   corrupt state is disposable. Storage preflight fails startup on unwritable data.
 - Check immediately, then 60 seconds after each completed check. Reuse HTTP clients.

@@ -140,7 +140,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	slog.Info("Ticket monitor started", "version", version, "restored_chats", restored, "stations", len(b.stations))
+	slog.Info("Ticket monitor started", "version", version, "restored_searches", restored, "stations", len(b.stations))
 	return b.run(ctx)
 }
 

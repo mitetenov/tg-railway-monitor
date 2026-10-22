@@ -12,6 +12,25 @@
     "no_config_yet": "No configuration yet.",
     "start_with_setroute": "Start with /start"
   },
+  "searches": {
+    "title": "📋 *My searches*",
+    "empty": "You have no active searches.",
+    "active_count": "Active searches: {count}.",
+    "select": "Select a search to manage it. ⏸ means paused.",
+    "add": "➕ Add search",
+    "details": "🎫 *{from_name}* → *{to_name}*\n📅 {date}\n💺 Class: {class_name}",
+    "class_any": "Any",
+    "active": "🟢 *Search active* — checking every 60 seconds.",
+    "paused": "⏸ *Search paused*. Checks and notifications are paused.",
+    "pause": "⏸ Pause search",
+    "resume": "▶️ Resume search",
+    "delete": "🗑 Delete search",
+    "delete_confirm": "Delete this search? Its settings and notification history will be deleted.",
+    "delete_yes": "🗑 Yes, delete",
+    "delete_no": "↩️ Keep search",
+    "back": "⬅️ Back to searches",
+    "open": "⚙️ Manage search"
+  },
   "wizard": {
     "date_select": "📅 *Select travel date:*",
     "date_today_btn": "📅 Today",
@@ -51,7 +70,7 @@
     "set_success": "🌐 Interface language set to *{language}*"
   },
   "stop": {
-    "stopped": "🛑 Monitoring stopped and configuration cleared.\nUse /start to set up again."
+    "stopped": "🛑 All searches stopped and deleted."
   },
   "poller": {
     "route_header": "🎫 *{from_name}* → *{to_name}*",
