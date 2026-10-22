@@ -100,25 +100,29 @@ func (b *bot) keyboard(lang, kind string) *markup {
 	case "lang":
 		return &markup{[][]button{{{t("lang.en_btn"), "lang_set:en"}, {t("lang.ru_btn"), "lang_set:ru"}}}}
 	default:
-		var quick []button
-		for _, code := range []string{"56014", "57151"} {
-			if s, ok := b.index[code]; ok {
-				quick = append(quick, button{b.locale.stationName(code, lang, s.Name), kind + ":" + code})
-			}
-		}
-		rows := [][]button{}
-		if len(quick) > 0 {
-			rows = append(rows, quick)
-		}
-		rows = append(rows, []button{{t("wizard.station_all_btn"), kind + ":all"}}, cancel)
-		return &markup{rows}
+		return b.quickStationKeyboard(lang, kind, "")
 	}
 }
 
-func (b *bot) stationKeyboard(lang, action string, page int) *markup {
+func (b *bot) quickStationKeyboard(lang, action, excludedCode string) *markup {
+	var quick []button
+	for _, code := range []string{"56014", "57151"} {
+		if s, ok := b.index[code]; ok && code != excludedCode {
+			quick = append(quick, button{b.locale.stationName(code, lang, s.Name), action + ":" + code})
+		}
+	}
+	rows := [][]button{}
+	if len(quick) > 0 {
+		rows = append(rows, quick)
+	}
+	rows = append(rows, []button{{b.locale.text(lang, "wizard.station_all_btn"), action + ":all"}}, []button{{b.locale.text(lang, "button.cancel"), "cancel"}})
+	return &markup{Rows: rows}
+}
+
+func (b *bot) stationKeyboard(lang, action string, page int, excludedCode string) *markup {
 	var stations []station
 	for _, s := range b.stations {
-		if s.Code != "56014" && s.Code != "57151" {
+		if s.Code != "56014" && s.Code != "57151" && string(s.Code) != excludedCode {
 			stations = append(stations, s)
 		}
 	}
@@ -214,7 +218,10 @@ func (b *bot) departureChoices(lang string, w *wizard, page int) (string, *marku
 		}
 		rows = append(rows, nav)
 	}
-	rows = append(rows, []button{{t("wizard.time_reload_btn"), "wiz_time:reload"}}, []button{{t("button.cancel"), "cancel"}})
+	if w.departureError || len(w.departures) == 0 {
+		rows = append(rows, []button{{t("wizard.time_reload_btn"), "wiz_time:reload"}})
+	}
+	rows = append(rows, []button{{t("button.cancel"), "cancel"}})
 	return text, &markup{Rows: rows}
 }
 
@@ -575,35 +582,37 @@ func (b *bot) handle(ctx context.Context, u update) error {
 	if w.step == "from" || w.step == "to" {
 		action := "wiz_" + w.step
 		prompt := "wizard.select_departure"
+		excludedCode := ""
 		if w.step == "to" {
 			prompt = "wizard.select_arrival"
+			excludedCode = w.draft.FromCode
 		}
 		if strings.HasPrefix(data, "page:"+action+":") {
 			page, err := strconv.Atoi(strings.TrimPrefix(data, "page:"+action+":"))
 			if err != nil {
 				return nil
 			}
-			return b.tg.call(ctx, "editMessageReplyMarkup", map[string]any{"chat_id": id, "message_id": m.ID, "reply_markup": b.stationKeyboard(lang, action, page)}, nil)
+			return b.tg.call(ctx, "editMessageReplyMarkup", map[string]any{"chat_id": id, "message_id": m.ID, "reply_markup": b.stationKeyboard(lang, action, page, excludedCode)}, nil)
 		}
 		if !strings.HasPrefix(data, action+":") {
 			return nil
 		}
 		code := strings.TrimPrefix(data, action+":")
 		if code == "all" {
-			return edit(t(prompt), b.stationKeyboard(lang, action, 0))
+			return edit(t(prompt), b.stationKeyboard(lang, action, 0, excludedCode))
 		}
 		s, ok := b.index[code]
 		if !ok {
-			return edit(t("wizard.station_not_found"), b.keyboard(lang, action))
+			return edit(t("wizard.station_not_found"), b.quickStationKeyboard(lang, action, excludedCode))
 		}
 		if w.step == "from" {
 			w.draft.FromCode = code
 			w.draft.From = s.Name
 			w.step = "to"
-			return edit(t("wizard.from_selected", "station_name", markdown(b.locale.stationName(code, lang, s.Name))), b.keyboard(lang, "wiz_to"))
+			return edit(t("wizard.from_selected", "station_name", markdown(b.locale.stationName(code, lang, s.Name))), b.quickStationKeyboard(lang, "wiz_to", code))
 		}
 		if w.draft.FromCode == code {
-			return edit(t("wizard.station_same"), b.keyboard(lang, "wiz_to"))
+			return edit(t("wizard.station_same"), b.quickStationKeyboard(lang, "wiz_to", excludedCode))
 		}
 		w.draft.ToCode = code
 		w.draft.To = s.Name

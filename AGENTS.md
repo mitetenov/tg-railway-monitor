@@ -57,10 +57,15 @@ can make the timetable API select the previous date. Validate the returned route
 and departure date. Historical captures may repeat a train: use the most recent
 `requestDate` per train. Guest access uses the public web client credentials;
 cache tokens in memory only, refresh on expiry/401, and never log credentials.
-Always offer "Any time" and refresh. Empty/error responses must not block setup.
+Always offer "Any time". Offer refresh only when loading failed or the departure
+list is empty; hide it after a successful nonempty load, including fallback lists.
+Empty/error responses must not block setup.
 Validate train choices against the current draft; refreshing must not change what
 an old choice button selects. Time strings are compared as returned, with no
 timezone conversion.
+Exclude the selected departure station from both quick arrival choices and every
+page of the arrival station list, including error recovery. Keep the same-station
+callback validation to reject stale or forged buttons.
 
 Wizard drafts remain in memory until class selection; completing the wizard
 adds a new search without replacing existing ones. Cancellation returns to the
