@@ -70,8 +70,8 @@ func readChat(path string) (chatConfig, error) {
 	}
 	c := chatConfig{Language: doc.Language, Searches: []search{}}
 	if doc.Searches == nil {
-		if doc.config.complete() {
-			doc.config.Language = ""
+		if doc.complete() {
+			doc.Language = ""
 			c.Searches = append(c.Searches, search{ID: "legacy", config: doc.config})
 		}
 	} else {
@@ -332,7 +332,7 @@ func (s *storage) loadState(id int64, searchID, key string) snapshot {
 	if !validSearchID(searchID) {
 		return snapshot{Key: key, Rides: make(map[string]map[string]seatState)}
 	}
-	if err := readJSON(s.statePath(id, searchID), &state); err != nil || (state.Key != key && !(allowLegacy && state.Key == legacyKey)) || state.Rides == nil {
+	if err := readJSON(s.statePath(id, searchID), &state); err != nil || (state.Key != key && (!allowLegacy || state.Key != legacyKey)) || state.Rides == nil {
 		return snapshot{Key: key, Rides: make(map[string]map[string]seatState)}
 	}
 	state.Key = key

@@ -97,7 +97,7 @@ func (t *telegram) call(ctx context.Context, method string, params any, result a
 		} `json:"parameters"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&envelope); err != nil {
-		return fmt.Errorf("Telegram %s: invalid response (HTTP %d)", method, resp.StatusCode)
+		return fmt.Errorf("telegram %s: invalid response (HTTP %d)", method, resp.StatusCode)
 	}
 	if !envelope.OK || resp.StatusCode != http.StatusOK {
 		if envelope.Code == 0 {

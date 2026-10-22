@@ -182,7 +182,7 @@ func (p *poller) restore() (int, error) {
 // reset the baseline, so tickets reappearing after a sell-out are announced.
 func (p *poller) notification(c config, rides []ride, previous snapshot) (snapshot, string) {
 	next := snapshot{Key: c.routeKey(), Rides: make(map[string]map[string]seatState)}
-	if previous.Key != next.Key && !(c.DepartureTime == "" && previous.Key == c.legacyRouteKey()) {
+	if previous.Key != next.Key && (c.DepartureTime != "" || previous.Key != c.legacyRouteKey()) {
 		previous.Rides = nil
 	}
 	changed := false
