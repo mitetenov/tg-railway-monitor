@@ -73,6 +73,37 @@ func TestPythonStorageCompatibility(t *testing.T) {
 	}
 }
 
+func TestDeparturePersistenceAndValidation(t *testing.T) {
+	s := testStore(t)
+	c := testConfig()
+	c.DepartureTime, c.RideNumber = "08:15", "812"
+	id, err := s.addSearch(1, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.setPaused(1, id, true); err != nil {
+		t.Fatal(err)
+	}
+	chat, err := (&storage{dir: s.dir}).load(1)
+	if err != nil || len(chat.Searches) != 1 || chat.Searches[0].DepartureTime != "08:15" || chat.Searches[0].RideNumber != "812" || !chat.Searches[0].Paused {
+		t.Fatal("departure was lost across persistence or pause", chat, err)
+	}
+	for _, value := range []string{"8:15", "24:00", "12:60", "08:15:00", "bad", " 08:15"} {
+		c.DepartureTime = value
+		if _, err := s.addSearch(1, c); err == nil {
+			t.Fatal("invalid departure time accepted", value)
+		}
+	}
+	c.DepartureTime = ""
+	if c.complete() {
+		t.Fatal("train without a departure time accepted")
+	}
+	c.RideNumber = ""
+	if !c.complete() {
+		t.Fatal("existing unrestricted config rejected")
+	}
+}
+
 func TestStorageCorruptionAndAtomicWrites(t *testing.T) {
 	s := testStore(t)
 	if err := os.WriteFile(s.path(1, false), []byte("{"), 0600); err != nil {

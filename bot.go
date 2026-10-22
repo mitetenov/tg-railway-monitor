@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -12,8 +14,20 @@ import (
 )
 
 type wizard struct {
-	step  string
-	draft config
+	step           string
+	draft          config
+	departures     []departure
+	departureError bool
+}
+
+type departure struct {
+	time   string
+	number string
+}
+
+func (d departure) callback() string {
+	sum := sha256.Sum256([]byte(d.time + "\x00" + d.number))
+	return fmt.Sprintf("wiz_time:%x", sum[:8])
 }
 
 var georgiaZone = func() *time.Location {
@@ -123,6 +137,66 @@ func (b *bot) stationKeyboard(lang, action string, page int) *markup {
 	return &markup{append(rows, nav, []button{{b.locale.text(lang, "button.cancel"), "cancel"}})}
 }
 
+// loadDepartures includes sold-out rides returned by the provider, since their
+// seats may become available during monitoring.
+func (b *bot) loadDepartures(ctx context.Context, w *wizard) {
+	c := w.draft
+	c.Class = "Any"
+	rides, err := b.poller.api.search(ctx, c)
+	w.departures = nil
+	w.departureError = err != nil
+	if err != nil {
+		slog.Warn("Cannot load departure choices", "error", err)
+		return
+	}
+	seen := make(map[departure]bool)
+	for _, r := range rides {
+		choice := departure{time: formatTime(r.Start), number: string(r.Number)}
+		if r.Number == "" || !validTime(choice.time) || seen[choice] {
+			continue
+		}
+		seen[choice] = true
+		w.departures = append(w.departures, choice)
+	}
+	sort.Slice(w.departures, func(i, j int) bool {
+		a, b := w.departures[i], w.departures[j]
+		if a.time == b.time {
+			return a.number < b.number
+		}
+		return a.time < b.time
+	})
+}
+
+func (b *bot) departureChoices(lang string, w *wizard, page int) (string, *markup) {
+	t := func(key string, args ...any) string { return b.locale.text(lang, key, args...) }
+	text := t("wizard.select_time")
+	if w.departureError {
+		text += "\n\n" + t("wizard.time_unavailable")
+	} else if len(w.departures) == 0 {
+		text += "\n\n" + t("wizard.time_empty")
+	}
+	rows := [][]button{{{t("wizard.time_any_btn"), "wiz_time:any"}}}
+	pages := max(1, (len(w.departures)+7)/8)
+	page = max(0, min(page, pages-1))
+	for i := page * 8; i < min((page+1)*8, len(w.departures)); i++ {
+		d := w.departures[i]
+		rows = append(rows, []button{{t("wizard.time_ride_btn", "time", d.time, "number", d.number), d.callback()}})
+	}
+	if pages > 1 {
+		var nav []button
+		if page > 0 {
+			nav = append(nav, button{t("button.prev"), fmt.Sprintf("page:wiz_time:%d", page-1)})
+		}
+		nav = append(nav, button{fmt.Sprintf("%d/%d", page+1, pages), "noop"})
+		if page+1 < pages {
+			nav = append(nav, button{t("button.next"), fmt.Sprintf("page:wiz_time:%d", page+1)})
+		}
+		rows = append(rows, nav)
+	}
+	rows = append(rows, []button{{t("wizard.time_reload_btn"), "wiz_time:reload"}}, []button{{t("button.cancel"), "cancel"}})
+	return text, &markup{Rows: rows}
+}
+
 func (b *bot) respond(ctx context.Context, id int64, messageID int, text string, keyboard *markup) error {
 	out := outgoing{ChatID: id, MessageID: messageID, Text: text, ParseMode: "Markdown", Markup: keyboard}
 	if messageID != 0 {
@@ -136,6 +210,16 @@ func (b *bot) className(lang, class string) string {
 		return b.locale.text(lang, "searches.class_any")
 	}
 	return class
+}
+
+func (b *bot) departureName(lang string, c config) string {
+	if c.DepartureTime == "" {
+		return b.locale.text(lang, "searches.time_any")
+	}
+	if c.RideNumber == "" {
+		return c.DepartureTime
+	}
+	return b.locale.text(lang, "wizard.time_ride_btn", "time", c.DepartureTime, "number", c.RideNumber)
 }
 
 func (b *bot) showHome(ctx context.Context, id int64, messageID int, lang string, page int) error {
@@ -181,6 +265,9 @@ func (b *bot) showHome(ctx context.Context, id int64, messageID int, lang string
 			status = "⏸"
 		}
 		label := fmt.Sprintf("%s %s → %s · %s · %s", status, b.locale.stationName(entry.FromCode, lang, entry.From), b.locale.stationName(entry.ToCode, lang, entry.To), entry.Date, b.className(lang, entry.Class))
+		if entry.DepartureTime != "" {
+			label += " · " + b.departureName(lang, entry.config)
+		}
 		rows = append(rows, []button{{label, "search:view:" + entry.ID}})
 	}
 	if pages > 1 {
@@ -215,6 +302,7 @@ func (b *bot) showSearch(ctx context.Context, id int64, messageID int, lang, sea
 	}
 	t := func(key string, args ...any) string { return b.locale.text(lang, key, args...) }
 	text := t("searches.details", "from_name", markdown(b.locale.stationName(entry.FromCode, lang, entry.From)), "to_name", markdown(b.locale.stationName(entry.ToCode, lang, entry.To)), "date", entry.Date, "class_name", b.className(lang, entry.Class))
+	text += "\n" + t("searches.departure", "time", markdown(b.departureName(lang, entry.config)))
 	status, action, label := "searches.active", "pause", "searches.pause"
 	if entry.Paused {
 		status, action, label = "searches.paused", "resume", "searches.resume"
@@ -426,6 +514,10 @@ func (b *bot) handle(ctx context.Context, u update) error {
 		if newLang == "ru" {
 			name = "Русский"
 		}
+		if w := b.wizards[key]; w != nil && w.step == "time" {
+			text, keyboard := b.departureChoices(newLang, w, 0)
+			return edit(b.locale.text(newLang, "lang.set_success", "language", name)+"\n\n"+text, keyboard)
+		}
 		return edit(b.locale.text(newLang, "lang.set_success", "language", name), nil)
 	}
 	w := b.wizards[key]
@@ -494,11 +586,49 @@ func (b *bot) handle(ctx context.Context, u update) error {
 		}
 		w.draft.ToCode = code
 		w.draft.To = s.Name
-		w.step = "class"
+		w.step = "time"
 		if err := edit(t("wizard.route_saved", "from_name", markdown(b.locale.stationName(w.draft.FromCode, lang, w.draft.From)), "to_name", markdown(b.locale.stationName(code, lang, s.Name))), nil); err != nil {
 			return err
 		}
-		return send(t("wizard.select_class"), b.keyboard(lang, "class"))
+		b.loadDepartures(ctx, w)
+		text, keyboard := b.departureChoices(lang, w, 0)
+		return send(text, keyboard)
+	}
+	if w.step == "time" {
+		if strings.HasPrefix(data, "page:wiz_time:") {
+			page, err := strconv.Atoi(strings.TrimPrefix(data, "page:wiz_time:"))
+			if err != nil {
+				return nil
+			}
+			text, keyboard := b.departureChoices(lang, w, page)
+			return edit(text, keyboard)
+		}
+		if !strings.HasPrefix(data, "wiz_time:") {
+			return nil
+		}
+		choice := strings.TrimPrefix(data, "wiz_time:")
+		if choice == "reload" {
+			b.loadDepartures(ctx, w)
+			text, keyboard := b.departureChoices(lang, w, 0)
+			return edit(text, keyboard)
+		}
+		if choice == "any" {
+			w.draft.DepartureTime, w.draft.RideNumber = "", ""
+		} else {
+			selected := false
+			for _, d := range w.departures {
+				if d.callback() == data {
+					w.draft.DepartureTime, w.draft.RideNumber = d.time, d.number
+					selected = true
+					break
+				}
+			}
+			if !selected {
+				return nil
+			}
+		}
+		w.step = "class"
+		return edit(t("wizard.time_set", "time", markdown(b.departureName(lang, w.draft)))+"\n\n"+t("wizard.select_class"), b.keyboard(lang, "class"))
 	}
 	if w.step == "class" && strings.HasPrefix(data, "wiz_class:") {
 		class := strings.TrimPrefix(data, "wiz_class:")

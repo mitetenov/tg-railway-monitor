@@ -139,3 +139,8 @@ func validDate(value string) bool {
 	_, err := time.Parse("2006-01-02", value)
 	return len(value) == 10 && err == nil
 }
+
+func validTime(value string) bool {
+	_, err := time.Parse("15:04", value)
+	return len(value) == 5 && err == nil
+}

@@ -44,6 +44,12 @@ func TestRailwayHTTPContract(t *testing.T) {
 	if err != nil || len(rides) != 1 || rides[0].Number != "812" || rides[0].Classes[0].Seats != 1 {
 		t.Fatalf("%+v %v", rides, err)
 	}
+	// Selection is applied locally; keep the provider request for the whole day.
+	c := testConfig()
+	c.DepartureTime, c.RideNumber = "00:30", "812"
+	if _, err := a.search(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRailwayErrorsDoNotLookLikeEmptyAvailability(t *testing.T) {
