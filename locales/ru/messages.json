@@ -12,7 +12,6 @@
     "no_config_yet": "Конфигурация ещё не задана.",
     "start_with_setroute": "Начните с /start"
   },
-
   "wizard": {
     "date_select": "📅 *Выберите дату поездки:*",
     "date_today_btn": "📅 Сегодня",
@@ -45,18 +44,15 @@
     "stop_confirm_btn": "🛑 Да, остановить",
     "stop_cancel_btn": "↩️ Нет, продолжить"
   },
-
   "lang": {
     "select": "🌐 *Выберите язык интерфейса:*",
     "en_btn": "🇬🇧 English",
     "ru_btn": "🇷🇺 Русский",
     "set_success": "🌐 Язык интерфейса установлен: *{language}*"
   },
-
   "stop": {
     "stopped": "🛑 Мониторинг остановлен и конфигурация удалена.\nИспользуйте /start, чтобы настроить заново."
   },
-
   "poller": {
     "route_header": "🎫 *{from_name}* → *{to_name}*",
     "date": "📅 {date}",
@@ -68,21 +64,21 @@
     "resumed": "✅ Мониторинг возобновлён.",
     "already_active": "ℹ️ Мониторинг уже активен."
   },
-
   "button": {
     "prev": "◀️ Назад",
     "next": "Далее ▶️",
     "cancel": "🚫 Отмена"
   },
-
   "n_seats": {
     "one": "{count} место",
     "few": "{count} места",
     "many": "{count} мест",
     "other": "{count} мест"
   },
-
   "fallback": {
     "unrecognised": "Я не понимаю эту команду.\nНачните с /start для настройки."
+  },
+  "error": {
+    "retry": "Не удалось выполнить действие. Повторите попытку или начните настройку с /start."
   }
 }

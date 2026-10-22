@@ -1,0 +1,299 @@
+[
+  {
+    "code": "56014",
+    "en": "Tbilisi",
+    "ru": "Тбилиси",
+    "ka": "თბილისი",
+    "slug": "Tbilisi",
+    "popular": true
+  },
+  {
+    "code": "56040",
+    "en": "Mtskheta",
+    "ru": "Мцхета",
+    "ka": "მცხეთა",
+    "slug": "Mtskheta",
+    "popular": false
+  },
+  {
+    "code": "56080",
+    "en": "Kaspi",
+    "ru": "Каспи",
+    "ka": "კასპი",
+    "slug": "Kaspi",
+    "popular": false
+  },
+  {
+    "code": "57000",
+    "en": "Samtredia",
+    "ru": "Самтредиа",
+    "ka": "სამტრედია",
+    "slug": "Samtredia",
+    "popular": true
+  },
+  {
+    "code": "57030",
+    "en": "Nigoiti",
+    "ru": "Нигоити",
+    "ka": "ნიგოითი",
+    "slug": "Nigoiti",
+    "popular": true
+  },
+  {
+    "code": "57031",
+    "en": "Shukhuti",
+    "ru": "Шухути",
+    "ka": "შუხუთი",
+    "slug": "Shukhuti",
+    "popular": false
+  },
+  {
+    "code": "57040",
+    "en": "Lanchkhuti",
+    "ru": "Ланчхути",
+    "ka": "ლანჩხუთი",
+    "slug": "Lanchkhuti",
+    "popular": false
+  },
+  {
+    "code": "57050",
+    "en": "Jumati",
+    "ru": "Джумати",
+    "ka": "ჯუმათი",
+    "slug": "Jumati",
+    "popular": false
+  },
+  {
+    "code": "57060",
+    "en": "Supsa",
+    "ru": "Супса",
+    "ka": "სუფსა",
+    "slug": "Supsa",
+    "popular": false
+  },
+  {
+    "code": "57070",
+    "en": "Ureki",
+    "ru": "Уреки",
+    "ka": "ურეკი",
+    "slug": "Ureki",
+    "popular": true
+  },
+  {
+    "code": "57080",
+    "en": "Natanebi",
+    "ru": "Натанеби",
+    "ka": "ნატანები",
+    "slug": "Natanebi",
+    "popular": false
+  },
+  {
+    "code": "57090",
+    "en": "Meria",
+    "ru": "Мерия",
+    "ka": "მერია",
+    "slug": "Meria",
+    "popular": false
+  },
+  {
+    "code": "57100",
+    "en": "Ozurgeti",
+    "ru": "Озургети",
+    "ka": "ოზურგეთი",
+    "slug": "Ozurgeti",
+    "popular": false
+  },
+  {
+    "code": "57120",
+    "en": "Kobuleti",
+    "ru": "Кобулети",
+    "ka": "ქობულეთი",
+    "slug": "Kobuleti",
+    "popular": true
+  },
+  {
+    "code": "57151",
+    "en": "Batumi",
+    "ru": "Батуми",
+    "ka": "ბათუმი",
+    "slug": "Batumi",
+    "popular": true
+  },
+  {
+    "code": "57170",
+    "en": "Abasha",
+    "ru": "Абаша",
+    "ka": "აბაშა",
+    "slug": "Abasha",
+    "popular": false
+  },
+  {
+    "code": "57190",
+    "en": "Senaki",
+    "ru": "Сенаки",
+    "ka": "სენაკი",
+    "slug": "Senaki",
+    "popular": false
+  },
+  {
+    "code": "57194",
+    "en": "Kvaloni",
+    "ru": "Квалони",
+    "ka": "ქვალონი",
+    "slug": "Kvaloni",
+    "popular": false
+  },
+  {
+    "code": "57202",
+    "en": "Chaladidi",
+    "ru": "Чаладиди",
+    "ka": "ჭალადიდი",
+    "slug": "Chaladidi",
+    "popular": false
+  },
+  {
+    "code": "57210",
+    "en": "Poti",
+    "ru": "Поти",
+    "ka": "ფოთი",
+    "slug": "Poti",
+    "popular": true
+  },
+  {
+    "code": "57250",
+    "en": "Khobi",
+    "ru": "Хоби",
+    "ka": "ხობი",
+    "slug": "Khobi",
+    "popular": false
+  },
+  {
+    "code": "57252",
+    "en": "Kheta",
+    "ru": "Хета",
+    "ka": "ხეთა",
+    "slug": "Kheta",
+    "popular": false
+  },
+  {
+    "code": "57280",
+    "en": "Ingiri",
+    "ru": "Ингири",
+    "ka": "ინგირი",
+    "slug": "Ingiri",
+    "popular": false
+  },
+  {
+    "code": "57290",
+    "en": "Zugdidi",
+    "ru": "Зугдиди",
+    "ka": "ზუგდიდი",
+    "slug": "Zugdidi",
+    "popular": false
+  },
+  {
+    "code": "57450",
+    "en": "Kutaisi Airport",
+    "ru": "Аэропорт Кутаиси",
+    "ka": "ქუთაისის საერთაშორისო აეროპორტი",
+    "slug": "Kutaisi%20Airport",
+    "popular": true
+  },
+  {
+    "code": "57510",
+    "en": "Rioni",
+    "ru": "Риони",
+    "ka": "რიონი",
+    "slug": "Rioni",
+    "popular": false
+  },
+  {
+    "code": "57530",
+    "en": "Kutaisi",
+    "ru": "Кутаиси",
+    "ka": "ქუთაისი",
+    "slug": "Kutaisi",
+    "popular": false,
+    "unserved": true
+  },
+  {
+    "code": "57580",
+    "en": "Sviri",
+    "ru": "Свири",
+    "ka": "სვირი",
+    "slug": "Sviri",
+    "popular": false
+  },
+  {
+    "code": "57600",
+    "en": "Zestafoni",
+    "ru": "Зестафони",
+    "ka": "ზესტაფონი",
+    "slug": "Zestafoni",
+    "popular": false
+  },
+  {
+    "code": "57670",
+    "en": "Dzirula",
+    "ru": "Дзирула",
+    "ka": "ძირულა",
+    "slug": "Dzirula",
+    "popular": false
+  },
+  {
+    "code": "57680",
+    "en": "Kharagauli",
+    "ru": "Харагаули",
+    "ka": "ხარაგაული",
+    "slug": "Kharagauli",
+    "popular": false
+  },
+  {
+    "code": "57690",
+    "en": "Marelisi",
+    "ru": "Марелиси",
+    "ka": "მარელისი",
+    "slug": "Marelisi",
+    "popular": false
+  },
+  {
+    "code": "57700",
+    "en": "Moliti",
+    "ru": "Молити",
+    "ka": "მოლითი",
+    "slug": "Moliti",
+    "popular": false
+  },
+  {
+    "code": "57702",
+    "en": "Tsifa",
+    "ru": "Цифа",
+    "ka": "წიფა",
+    "slug": "Tsifa",
+    "popular": false
+  },
+  {
+    "code": "57720",
+    "en": "Khashuri",
+    "ru": "Хашури",
+    "ka": "ხაშური",
+    "slug": "Khashuri",
+    "popular": true
+  },
+  {
+    "code": "57880",
+    "en": "Kareli",
+    "ru": "Карели",
+    "ka": "ქარელი",
+    "slug": "Kareli",
+    "popular": false
+  },
+  {
+    "code": "57900",
+    "en": "Gori",
+    "ru": "Гори",
+    "ka": "გორი",
+    "slug": "Gori",
+    "popular": false
+  }
+]

@@ -1,0 +1,419 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"strings"
+	"time"
+	_ "time/tzdata"
+)
+
+type wizard struct {
+	step  string
+	draft config
+}
+
+var georgiaZone = func() *time.Location {
+	zone, err := time.LoadLocation("Asia/Tbilisi")
+	if err != nil {
+		return time.FixedZone("Asia/Tbilisi", 4*60*60)
+	}
+	return zone
+}()
+
+type bot struct {
+	tg        *telegram
+	store     *storage
+	poller    *poller
+	locale    *catalog
+	stations  []station
+	index     map[string]station
+	wizards   map[[2]int64]*wizard
+	languages map[int64]string
+	now       func() time.Time
+	zone      *time.Location
+}
+
+func newBot(tg *telegram, store *storage, p *poller, locale *catalog) *bot {
+	return &bot{tg: tg, store: store, poller: p, locale: locale, index: make(map[string]station), wizards: make(map[[2]int64]*wizard), languages: make(map[int64]string), now: time.Now, zone: georgiaZone}
+}
+
+func (b *bot) loadStations(ctx context.Context, api *railwayAPI) {
+	stations, err := api.stations(ctx)
+	if err != nil || len(stations) == 0 {
+		stations = b.locale.fallback
+		slog.Warn("Using offline station dictionary")
+	}
+	b.stations = nil
+	b.index = make(map[string]station)
+	for _, s := range stations {
+		if _, err := strconv.ParseUint(string(s.Code), 10, 32); err != nil {
+			continue
+		}
+		if _, duplicate := b.index[string(s.Code)]; duplicate {
+			continue
+		}
+		b.stations = append(b.stations, s)
+		b.index[string(s.Code)] = s
+	}
+	if len(b.stations) == 0 {
+		for _, s := range b.locale.fallback {
+			b.stations = append(b.stations, s)
+			b.index[string(s.Code)] = s
+		}
+	}
+}
+
+func (b *bot) keyboard(lang, kind string) *markup {
+	t := func(key string) string { return b.locale.text(lang, key) }
+	cancel := []button{{t("button.cancel"), "cancel"}}
+	switch kind {
+	case "date":
+		return &markup{[][]button{
+			{{t("wizard.date_today_btn"), "wiz_date:today"}, {t("wizard.date_tomorrow_btn"), "wiz_date:tomorrow"}},
+			{{t("wizard.date_custom_btn"), "wiz_date:custom"}}, cancel,
+		}}
+	case "class":
+		return &markup{[][]button{
+			{{t("wizard.class_any_btn"), "wiz_class:Any"}, {t("wizard.class_business_btn"), "wiz_class:Business"}},
+			{{t("wizard.class_i_btn"), "wiz_class:I"}, {t("wizard.class_ii_btn"), "wiz_class:II"}}, cancel,
+		}}
+	case "lang":
+		return &markup{[][]button{{{t("lang.en_btn"), "lang_set:en"}, {t("lang.ru_btn"), "lang_set:ru"}}}}
+	default:
+		var quick []button
+		for _, code := range []string{"56014", "57151"} {
+			if s, ok := b.index[code]; ok {
+				quick = append(quick, button{b.locale.stationName(code, lang, s.Name), kind + ":" + code})
+			}
+		}
+		rows := [][]button{}
+		if len(quick) > 0 {
+			rows = append(rows, quick)
+		}
+		rows = append(rows, []button{{t("wizard.station_all_btn"), kind + ":all"}}, cancel)
+		return &markup{rows}
+	}
+}
+
+func (b *bot) stationKeyboard(lang, action string, page int) *markup {
+	var stations []station
+	for _, s := range b.stations {
+		if s.Code != "56014" && s.Code != "57151" {
+			stations = append(stations, s)
+		}
+	}
+	pages := max(1, (len(stations)+7)/8)
+	page = max(0, min(page, pages-1))
+	rows := [][]button{}
+	for _, s := range stations[min(page*8, len(stations)):min((page+1)*8, len(stations))] {
+		rows = append(rows, []button{{b.locale.stationName(string(s.Code), lang, s.Name), action + ":" + string(s.Code)}})
+	}
+	var nav []button
+	if page > 0 {
+		nav = append(nav, button{b.locale.text(lang, "button.prev"), fmt.Sprintf("page:%s:%d", action, page-1)})
+	}
+	nav = append(nav, button{fmt.Sprintf("%d/%d", page+1, pages), "noop"})
+	if page < pages-1 {
+		nav = append(nav, button{b.locale.text(lang, "button.next"), fmt.Sprintf("page:%s:%d", action, page+1)})
+	}
+	return &markup{append(rows, nav, []button{{b.locale.text(lang, "button.cancel"), "cancel"}})}
+}
+
+func (b *bot) setLanguage(id int64, code string) (string, error) {
+	code = strings.ToLower(strings.Split(code, "-")[0])
+	if code != "ru" && code != "en" {
+		return "", errors.New("unsupported language")
+	}
+	if err := b.store.update(id, func(c *config) { c.Language = code }); err != nil {
+		return "", err
+	}
+	b.languages[id] = code
+	return code, nil
+}
+
+func (b *bot) handle(ctx context.Context, u update) error {
+	m := u.Message
+	actor := user{}
+	if m != nil {
+		actor = m.From
+	}
+	if u.Callback != nil {
+		m = u.Callback.Message
+		actor = u.Callback.From
+		if err := b.tg.call(ctx, "answerCallbackQuery", map[string]string{"callback_query_id": u.Callback.ID}, nil); err != nil {
+			slog.Warn("Cannot acknowledge callback", "error", err)
+		}
+	}
+	if m == nil {
+		return nil
+	}
+	id := m.Chat.ID
+	key := [2]int64{id, actor.ID}
+	c, loadErr := b.store.load(id)
+	lang := b.languages[id]
+	if lang == "" {
+		if c.Language != "" {
+			lang = language(c.Language)
+		} else {
+			lang = language(actor.Language)
+		}
+	}
+	b.languages[id] = lang
+	t := func(k string, args ...any) string { return b.locale.text(lang, k, args...) }
+	send := func(text string, k *markup) error {
+		return b.tg.send(ctx, outgoing{ChatID: id, Text: text, ParseMode: "Markdown", Markup: k})
+	}
+	edit := func(text string, k *markup) error {
+		return b.tg.edit(ctx, outgoing{ChatID: id, MessageID: m.ID, Text: text, ParseMode: "Markdown", Markup: k})
+	}
+	if u.Callback == nil {
+		args := strings.Fields(m.Text)
+		command := ""
+		if len(args) > 0 && strings.HasPrefix(args[0], "/") {
+			command = args[0]
+			if name, mention, ok := strings.Cut(command, "@"); ok {
+				if !strings.EqualFold(mention, b.tg.username) {
+					return nil
+				}
+				command = name
+			}
+		}
+		if command == "/stop" {
+			b.poller.stop(id)
+			if err := b.store.clearMonitor(id); err != nil {
+				return err
+			}
+			for k := range b.wizards {
+				if k[0] == id {
+					delete(b.wizards, k)
+				}
+			}
+			return send(t("stop.stopped"), nil)
+		}
+		if loadErr != nil {
+			return loadErr
+		}
+		if c.Language == "" {
+			if err := b.store.update(id, func(c *config) { c.Language = lang }); err != nil {
+				return err
+			}
+		}
+		switch command {
+		case "/start":
+			b.wizards[key] = &wizard{step: "date"}
+			return send(t("wizard.date_select"), b.keyboard(lang, "date"))
+		case "/lang":
+			if len(args) != 2 {
+				return send(t("lang.select"), b.keyboard(lang, "lang"))
+			}
+			code := strings.ToLower(strings.Split(args[1], "-")[0])
+			if code != "en" && code != "ru" {
+				return b.tg.send(ctx, outgoing{ChatID: id, Text: fmt.Sprintf("❌ Unsupported language '%s'.\nSupported: en, ru", args[1])})
+			}
+			newLang, err := b.setLanguage(id, args[1])
+			if err != nil {
+				return err
+			}
+			name := "English"
+			if newLang == "ru" {
+				name = "Русский"
+			}
+			return send(b.locale.text(newLang, "lang.set_success", "language", name), nil)
+		}
+		w := b.wizards[key]
+		if command == "" && w != nil && w.step == "custom" {
+			date := strings.TrimSpace(m.Text)
+			if !validDate(date) {
+				return send(t("wizard.date_invalid"), nil)
+			}
+			if date < b.now().In(b.zone).Format("2006-01-02") {
+				return send(t("wizard.date_past"), nil)
+			}
+			w.draft.Date = date
+			w.step = "from"
+			if err := send(t("wizard.date_set", "date", date), nil); err != nil {
+				return err
+			}
+			return send(t("wizard.select_departure"), b.keyboard(lang, "wiz_from"))
+		}
+		if m.Text != "" {
+			return send(t("fallback.unrecognised"), nil)
+		}
+		return nil
+	}
+	if loadErr != nil {
+		return loadErr
+	}
+	data := u.Callback.Data
+	if strings.HasPrefix(data, "lang_set:") {
+		code := strings.TrimPrefix(data, "lang_set:")
+		if code != "en" && code != "ru" {
+			return nil
+		}
+		newLang, err := b.setLanguage(id, code)
+		if err != nil {
+			return err
+		}
+		name := "English"
+		if newLang == "ru" {
+			name = "Русский"
+		}
+		return edit(b.locale.text(newLang, "lang.set_success", "language", name), nil)
+	}
+	w := b.wizards[key]
+	if w == nil {
+		return nil
+	}
+	if data == "cancel" {
+		delete(b.wizards, key)
+		return edit(t("wizard.cancelled"), nil)
+	}
+	if data == "noop" {
+		return nil
+	}
+	if w.step == "date" && strings.HasPrefix(data, "wiz_date:") {
+		choice := strings.TrimPrefix(data, "wiz_date:")
+		if choice == "custom" {
+			w.step = "custom"
+			return edit(t("wizard.date_custom_prompt"), nil)
+		}
+		if choice != "today" && choice != "tomorrow" {
+			return nil
+		}
+		date := b.now().In(b.zone)
+		if choice == "tomorrow" {
+			date = date.AddDate(0, 0, 1)
+		}
+		w.draft.Date = date.Format("2006-01-02")
+		w.step = "from"
+		if err := edit(t("wizard.date_"+choice+"_set", "date", w.draft.Date), nil); err != nil {
+			return err
+		}
+		return send(t("wizard.select_departure"), b.keyboard(lang, "wiz_from"))
+	}
+	if w.step == "from" || w.step == "to" {
+		action := "wiz_" + w.step
+		prompt := "wizard.select_departure"
+		if w.step == "to" {
+			prompt = "wizard.select_arrival"
+		}
+		if strings.HasPrefix(data, "page:"+action+":") {
+			page, err := strconv.Atoi(strings.TrimPrefix(data, "page:"+action+":"))
+			if err != nil {
+				return nil
+			}
+			return b.tg.call(ctx, "editMessageReplyMarkup", map[string]any{"chat_id": id, "message_id": m.ID, "reply_markup": b.stationKeyboard(lang, action, page)}, nil)
+		}
+		if !strings.HasPrefix(data, action+":") {
+			return nil
+		}
+		code := strings.TrimPrefix(data, action+":")
+		if code == "all" {
+			return edit(t(prompt), b.stationKeyboard(lang, action, 0))
+		}
+		s, ok := b.index[code]
+		if !ok {
+			return edit(t("wizard.station_not_found"), b.keyboard(lang, action))
+		}
+		if w.step == "from" {
+			w.draft.FromCode = code
+			w.draft.From = s.Name
+			w.step = "to"
+			return edit(t("wizard.from_selected", "station_name", markdown(b.locale.stationName(code, lang, s.Name))), b.keyboard(lang, "wiz_to"))
+		}
+		if w.draft.FromCode == code {
+			return edit(t("wizard.station_same"), b.keyboard(lang, "wiz_to"))
+		}
+		w.draft.ToCode = code
+		w.draft.To = s.Name
+		w.step = "class"
+		if err := edit(t("wizard.route_saved", "from_name", markdown(b.locale.stationName(w.draft.FromCode, lang, w.draft.From)), "to_name", markdown(b.locale.stationName(code, lang, s.Name))), nil); err != nil {
+			return err
+		}
+		return send(t("wizard.select_class"), b.keyboard(lang, "class"))
+	}
+	if w.step == "class" && strings.HasPrefix(data, "wiz_class:") {
+		class := strings.TrimPrefix(data, "wiz_class:")
+		if _, ok := classFilters[class]; !ok && class != "Any" {
+			return nil
+		}
+		w.draft.Class = class
+		if !w.draft.complete() {
+			return errors.New("incomplete wizard configuration")
+		}
+		b.poller.stop(id)
+		if err := b.store.update(id, func(c *config) { previousLang := c.Language; *c = w.draft; c.Language = previousLang }); err != nil {
+			if c.complete() {
+				b.poller.start(id)
+			}
+			return err
+		}
+		delete(b.wizards, key)
+		b.poller.start(id)
+		if err := edit(t("wizard.class_set", "class_name", class), nil); err != nil {
+			return err
+		}
+		return send(t("wizard.monitoring_started"), nil)
+	}
+	return nil
+}
+
+func markdown(s string) string {
+	return strings.NewReplacer("_", "\\_", "*", "\\*", "`", "\\`", "[", "\\[").Replace(s)
+}
+
+func (b *bot) run(ctx context.Context) error {
+	offset := int64(0)
+	backoff := time.Second
+	for ctx.Err() == nil {
+		var updates []update
+		err := b.tg.call(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 30, "allowed_updates": []string{"message", "callback_query"}}, &updates)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			var te *telegramError
+			if errors.As(err, &te) && (te.Code == 401 || te.Code == 409) {
+				return err
+			}
+			delay := backoff
+			if te != nil && te.RetryAfter > 0 {
+				delay = time.Duration(te.RetryAfter) * time.Second
+			}
+			slog.Warn("Telegram polling failed; retrying", "error", err, "delay", delay)
+			if !waitContext(ctx, delay) {
+				return nil
+			}
+			backoff = min(backoff*2, 30*time.Second)
+			continue
+		}
+		backoff = time.Second
+		for _, u := range updates {
+			if ctx.Err() != nil {
+				return nil
+			}
+			if u.ID < offset {
+				continue
+			}
+			if err := b.handle(ctx, u); err != nil {
+				slog.Error("Cannot process update", "update_id", u.ID, "error", err)
+				m := u.Message
+				if u.Callback != nil {
+					m = u.Callback.Message
+				}
+				if m != nil && ctx.Err() == nil {
+					lang := b.languages[m.Chat.ID]
+					if err := b.tg.send(ctx, outgoing{ChatID: m.Chat.ID, Text: b.locale.text(lang, "error.retry")}); err != nil {
+						slog.Warn("Cannot send error response", "error", err)
+					}
+				}
+			}
+			offset = u.ID + 1
+		}
+	}
+	return nil
+}

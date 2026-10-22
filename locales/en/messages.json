@@ -12,7 +12,6 @@
     "no_config_yet": "No configuration yet.",
     "start_with_setroute": "Start with /start"
   },
-
   "wizard": {
     "date_select": "📅 *Select travel date:*",
     "date_today_btn": "📅 Today",
@@ -45,18 +44,15 @@
     "stop_confirm_btn": "🛑 Yes, stop",
     "stop_cancel_btn": "↩️ No, keep monitoring"
   },
-
   "lang": {
     "select": "🌐 *Select interface language:*",
     "en_btn": "🇬🇧 English",
     "ru_btn": "🇷🇺 Русский",
     "set_success": "🌐 Interface language set to *{language}*"
   },
-
   "stop": {
     "stopped": "🛑 Monitoring stopped and configuration cleared.\nUse /start to set up again."
   },
-
   "poller": {
     "route_header": "🎫 *{from_name}* → *{to_name}*",
     "date": "📅 {date}",
@@ -68,19 +64,19 @@
     "resumed": "✅ Monitoring resumed.",
     "already_active": "ℹ️ Monitoring is already active."
   },
-
   "button": {
     "prev": "◀️ Prev",
     "next": "Next ▶️",
     "cancel": "🚫 Cancel"
   },
-
   "n_seats": {
     "one": "{count} seat",
     "other": "{count} seats"
   },
-
   "fallback": {
     "unrecognised": "I don't understand that command.\nStart with /start to begin setup."
+  },
+  "error": {
+    "retry": "Something went wrong. Please try again or restart setup with /start."
   }
 }

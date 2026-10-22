@@ -12,7 +12,7 @@ services:
     build:
       context: .
       args:
-        VERSION: ${VERSION:-0.0.0}
+        VERSION: ${VERSION:-0.1.0}
     restart: unless-stopped
     env_file: .env
     volumes:

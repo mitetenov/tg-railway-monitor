@@ -1,63 +1,9 @@
-# ─── .dockerignore — keep the build context small and the cache stable ──
-#
-# Everything not needed at runtime is excluded.  Beyond image size this
-# protects layer caching: the `COPY *.py` layer must not be invalidated
-# by a README edit or a stray .coverage file.
-
-# Version control
-.git/
-.gitignore
-.gitattributes
-.worktrees/
-
-# Python caches, test and coverage artifacts
-__pycache__/
-*.py[cod]
-*.egg-info/
-.pytest_cache/
-.coverage
-.coverage.*
-htmlcov/
-
-# Virtual environments (host-specific)
-.venv/
-venv/
-
-# Secrets (passed at runtime via -e or --env-file)
-.env
-.env.*
-
-# Runtime data (persistent volume)
-data/
-monitor_state.json
-config.json
-
-# Editors / agent tooling
-.vscode/
-.idea/
-.claude/
-.opencode/
-
-# Tests and debug helpers (not shipped)
-tests/
-_debug_*.py
-
-# Dev-only tooling (not imported by bot.py)
-api_explorer.py
-patch_slots.py
-scripts/
-
-# Sample data (development only)
-sample_*.json
-
-# Documentation (not needed at runtime; keeps the code layer cacheable)
-*.md
-LICENSE
-
-# CI / build definitions
-.github/
-Dockerfile
-.dockerignore
-docker-compose.yml
-docker-entrypoint.sh
-version.txt
+# Allowlist: credentials, runtime data, worktrees and docs never enter builds.
+**
+!go.mod
+!*.go
+*_test.go
+!stations.json
+!locales/
+!locales/**
+!version.txt

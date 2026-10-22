@@ -27,3 +27,9 @@ config.json
 
 # Git worktrees
 .worktrees/
+
+# Go build outputs and local caches
+/ticket-monitor
+/bin/
+/.cache/
+/coverage.out
