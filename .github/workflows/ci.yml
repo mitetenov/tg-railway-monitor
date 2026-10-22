@@ -52,7 +52,7 @@ jobs:
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           echo "VERSION=$version" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
-      - name: Build local image for runtime checks
+      - name: Build platform image
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -63,38 +63,39 @@ jobs:
           cache-from: type=gha,scope=image-${{ matrix.arch }}
           cache-to: type=gha,scope=image-${{ matrix.arch }},mode=max
       - name: Runtime checks without credentials or network
+        id: checked
+        shell: bash
         env:
           VERSION: ${{ steps.version.outputs.VERSION }}
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
-          test "$(docker inspect -f '{{.Architecture}}' tg-ticket-monitor:ci)" = "$EXPECTED_ARCH"
+          image_id=$(docker image inspect -f '{{.Id}}' tg-ticket-monitor:ci)
+          test "$(docker image inspect -f '{{.Architecture}}' "$image_id")" = "$EXPECTED_ARCH"
           docker run --rm --network none --read-only \
             --tmpfs /app/data:uid=1000,gid=1000,mode=700 \
-            tg-ticket-monitor:ci --check
-          test "$(docker run --rm --network none tg-ticket-monitor:ci --version)" = "$VERSION"
-          test "$(docker inspect -f '{{.Config.User}}' tg-ticket-monitor:ci)" = "1000:1000"
+            "$image_id" --check
+          test "$(docker run --rm --network none "$image_id" --version)" = "$VERSION"
+          test "$(docker image inspect -f '{{.Config.User}}' "$image_id")" = "1000:1000"
+          echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
       - name: Log in to Docker Hub
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
-      - name: Push platform image by digest
-        id: release
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          outputs: type=image,name=${{ secrets.DOCKER_USERNAME }}/tg-ticket-monitor,push-by-digest=true,name-canonical=true,push=true
-          platforms: linux/${{ matrix.arch }}
-          build-args: VERSION=${{ steps.version.outputs.VERSION }}
-          cache-from: type=gha,scope=image-${{ matrix.arch }}
-          cache-to: type=gha,scope=image-${{ matrix.arch }},mode=max
-      - name: Export image digest
+      - name: Push checked image and export digest
+        shell: bash
         env:
-          DIGEST: ${{ steps.release.outputs.digest }}
+          IMAGE: ${{ secrets.DOCKER_USERNAME }}/tg-ticket-monitor
+          IMAGE_ID: ${{ steps.checked.outputs.image_id }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          ref="$IMAGE:ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${ARCH}"
+          docker image tag "$IMAGE_ID" "$ref"
+          docker image push "$ref"
+          digest=$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}')
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           mkdir -p "$RUNNER_TEMP/digests"
-          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
       - name: Upload image digest
         uses: actions/upload-artifact@v4
         with:

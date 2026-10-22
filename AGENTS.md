@@ -125,8 +125,11 @@ GitHub Actions runs formatting, vet, and race tests on x86 `ubuntu-24.04` for
 pull requests and pushes to `main`. Docker jobs run only on pushes to `main`:
 build and check each image on a matching native runner (`ubuntu-24.04` for amd64
 and `ubuntu-24.04-arm` for arm64), with separate BuildKit cache scopes, then
-upload each checked image by digest. Only after both platform jobs succeed does
-`docker-publish` assemble the `latest` and version manifests.
+push that same checked Image ID with `docker image push`, without rebuilding.
+Each architecture is built only once per run. Intermediate tags include the run
+ID, attempt, and architecture to avoid collisions; the published digest is passed
+to `docker-publish`. Only after both platform jobs succeed does `docker-publish`
+assemble the `latest` and version manifests from those digests.
 
 ## Environment and conventions
 
