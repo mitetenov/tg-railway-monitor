@@ -121,6 +121,12 @@ belong to this UID. Changing it requires an explicit ownership migration.
 are excluded. Manifest and runtime assets precede source; compiler cache uses a
 BuildKit cache mount. Version metadata is last. Avoid `--no-cache` in normal builds.
 
+GitHub Actions builds and checks each image on a matching native runner:
+`ubuntu-24.04` for amd64 and `ubuntu-24.04-arm` for arm64, with separate BuildKit
+cache scopes. Pull requests run runtime checks on both architectures without
+publishing. Pushes to `main` upload each checked image by digest; only after both
+jobs succeed does `docker-publish` assemble the `latest` and version manifests.
+
 ## Environment and conventions
 
 `BOT_TOKEN` required; `.env` is loaded without overriding environment variables.
