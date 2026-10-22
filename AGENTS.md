@@ -41,11 +41,17 @@ contains 160 notification cases captured from committed Python HEAD `4442a00`.
 
 Only `/start`, `/stop`, `/lang` are registered commands. Do not restore removed
 `/setroute`, `/setdate`, `/setclass`, `/status` commands. Wizard steps: date,
-custom date, departure, arrival, class. `/start` opens the search list; the inline
+custom date, departure, arrival, departure time/train, class. `/start` opens the search list; the inline
 add button starts the wizard. Search cards offer pause/resume and confirmed
 deletion. Lists use eight searches per page and include paused searches.
 Old wizard callback strings remain supported.
 Travel dates always use **Asia/Tbilisi**, regardless of user/host timezone.
+After selecting a route, offer time/train choices from the provider (including
+returned sold-out rides), sorted by departure time and paginated eight per page.
+Always offer "Any time" and refresh. Empty/error responses must not block setup.
+Validate train choices against the current draft; refreshing must not change what
+an old choice button selects. Time strings are compared as returned, with no
+timezone conversion.
 
 Wizard drafts remain in memory until class selection; completing the wizard
 adds a new search without replacing existing ones. Cancellation returns to the
@@ -58,11 +64,15 @@ preserving language, and clears all drafts for that chat.
 - Config: `data/{chat_id}.json` contains chat-level `language` (`en`, `ru`) and
   `searches`. Each search has a stable random 16-hex-character `id`, `paused`,
   `from_station_code`, `to_station_code`, `from_station`, `to_station`, `date`,
-  and `seat_class` (`Any`, `I`, `II`, `Business`). Legacy single-route configs
+  and `seat_class` (`Any`, `I`, `II`, `Business`). Optional `departure_time`
+  (`HH:MM`) and `ride_number` identify the selected departure; missing fields
+  mean any time/train. Legacy single-route configs
   become one search with ID `legacy`; the next mutation writes the new format.
 - Snapshot: `data/{chat_id}.{search_id}.state.json`; the migrated `legacy` search
   retains `data/{chat_id}.state.json` to preserve its notification baseline.
-  `key` is `from>to@date#class`; legacy keys without the class are migrated; `rides` maps
+  `key` is `from>to@date#class`, with `#HH:MM#ride_number` appended for a
+  selected departure. Legacy keys without the class are migrated only for
+  unrestricted searches; `rides` maps
   ride numbers to class IDs, each containing `seats` and `price`.
 - JSON writes use a private temporary file, fsync, and atomic rename.
 - Active searches resume automatically on startup. Paused searches stay paused
@@ -75,7 +85,7 @@ preserving language, and clears all drafts for that chat.
   corrupt state is disposable. Storage preflight fails startup on unwritable data.
 - Check immediately, then 60 seconds after each completed check. Reuse HTTP clients.
 - Notify on newly available seats or an increase, grouped across all available
-  rides in the selected class. Decreases only update state. A successful empty
+  rides in the selected class and departure time/train. Decreases only update state. A successful empty
   result resets stale rides; API errors preserve state. Commit state after send
   succeeds so failed notifications retry. Multi-message delivery is at-least-once.
 - No legacy standalone/threading monitor or Python compatibility patches remain.

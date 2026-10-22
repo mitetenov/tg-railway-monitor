@@ -160,6 +160,85 @@ func TestPollerGroupedClassesAndRouteReset(t *testing.T) {
 	}
 }
 
+func TestPollerSelectedDepartureAndRestart(t *testing.T) {
+	p, a, sender := testPoller(t)
+	c := testConfig()
+	c.Class, c.DepartureTime, c.RideNumber = "II", "00:30", "812"
+	saveConfig(t, p.store, 1, c)
+	otherTrain := sampleRide(20)
+	otherTrain.Number = "814" // Same time, different train.
+	otherTime := sampleRide(20)
+	otherTime.Start = "2026-12-30T12:30:00Z" // Same number, different time.
+	unknownTime := sampleRide(20)
+	unknownTime.Start = ""
+	a.rides = []ride{otherTrain, otherTime, unknownTime}
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.messages) != 0 || len(p.store.loadState(1, "legacy", c.routeKey()).Rides) != 0 {
+		t.Fatal("unselected departures affected notification baseline")
+	}
+	a.rides = append(a.rides, sampleRide(3))
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.messages) != 1 || strings.Contains(sender.messages[0].Text, "#814") || strings.Contains(sender.messages[0].Text, "12:30") || !strings.Contains(sender.messages[0].Text, "3 мест") {
+		t.Fatal("notification included another departure", sender.messages)
+	}
+	p2 := newPoller(context.Background(), &storage{dir: p.store.dir}, a, sender, p.locale)
+	p2.now = p.now
+	if err := p2.check(context.Background(), 1, "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.messages) != 1 {
+		t.Fatal("selected departure re-announced after restart")
+	}
+	a.rides = []ride{otherTrain}
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	a.rides = []ride{otherTrain, sampleRide(3)}
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.messages) != 2 {
+		t.Fatal("selected departure did not notify after reappearance")
+	}
+}
+
+func TestDepartureSnapshotIdentity(t *testing.T) {
+	p, _, _ := testPoller(t)
+	c := testConfig()
+	rides := []ride{sampleRide(3)}
+	previous, _ := p.notification(c, rides, snapshot{})
+	c.DepartureTime, c.RideNumber = "00:30", "812"
+	selected, text := p.notification(c, rides, previous)
+	if text == "" || selected.Key == previous.Key {
+		t.Fatal("departure filter reused unrestricted baseline")
+	}
+	legacy := previous
+	legacy.Key = c.legacyRouteKey()
+	if _, text := p.notification(c, rides, legacy); text == "" {
+		t.Fatal("selected departure reused legacy baseline")
+	}
+	if err := p.store.saveState(1, "legacy", legacy); err != nil {
+		t.Fatal(err)
+	}
+	if state := p.store.loadState(1, "legacy", c.routeKey()); len(state.Rides) != 0 {
+		t.Fatal("storage migrated legacy state into a filtered search")
+	}
+	for _, change := range []func(*config){
+		func(c *config) { c.DepartureTime = "12:30" },
+		func(c *config) { c.RideNumber = "814" },
+	} {
+		next := c
+		change(&next)
+		if next.routeKey() == selected.Key {
+			t.Fatal("time or train is absent from snapshot identity")
+		}
+	}
+}
+
 func TestPollerLifecycleAndRestore(t *testing.T) {
 	p, a, _ := testPoller(t)
 	p.interval = 2 * time.Millisecond

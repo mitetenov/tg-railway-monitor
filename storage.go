@@ -17,13 +17,15 @@ import (
 )
 
 type config struct {
-	FromCode string `json:"from_station_code,omitempty"`
-	ToCode   string `json:"to_station_code,omitempty"`
-	From     string `json:"from_station,omitempty"`
-	To       string `json:"to_station,omitempty"`
-	Date     string `json:"date,omitempty"`
-	Class    string `json:"seat_class,omitempty"`
-	Language string `json:"language,omitempty"`
+	FromCode      string `json:"from_station_code,omitempty"`
+	ToCode        string `json:"to_station_code,omitempty"`
+	From          string `json:"from_station,omitempty"`
+	To            string `json:"to_station,omitempty"`
+	Date          string `json:"date,omitempty"`
+	Class         string `json:"seat_class,omitempty"`
+	DepartureTime string `json:"departure_time,omitempty"`
+	RideNumber    string `json:"ride_number,omitempty"`
+	Language      string `json:"language,omitempty"`
 }
 
 type search struct {
@@ -89,7 +91,8 @@ func readChat(path string) (chatConfig, error) {
 
 func (c config) complete() bool {
 	_, validClass := classFilters[c.Class]
-	return numericCode(c.FromCode) && numericCode(c.ToCode) && c.FromCode != c.ToCode && validDate(c.Date) && (c.Class == "Any" || validClass)
+	validDeparture := (c.DepartureTime == "" || validTime(c.DepartureTime)) && (c.RideNumber == "" || c.DepartureTime != "")
+	return numericCode(c.FromCode) && numericCode(c.ToCode) && c.FromCode != c.ToCode && validDate(c.Date) && (c.Class == "Any" || validClass) && validDeparture
 }
 
 func numericCode(code string) bool {
@@ -104,8 +107,17 @@ func numericCode(code string) bool {
 	return true
 }
 
-func (c config) legacyRouteKey() string     { return c.FromCode + ">" + c.ToCode + "@" + c.Date }
-func (c config) routeKey() string           { return c.legacyRouteKey() + "#" + c.Class }
+func (c config) legacyRouteKey() string { return c.FromCode + ">" + c.ToCode + "@" + c.Date }
+func (c config) routeKey() string {
+	key := c.legacyRouteKey() + "#" + c.Class
+	if c.DepartureTime != "" {
+		key += "#" + c.DepartureTime
+	}
+	if c.RideNumber != "" {
+		key += "#" + c.RideNumber
+	}
+	return key
+}
 func (c config) expired(now time.Time) bool { return c.Date < now.In(georgiaZone).Format("2006-01-02") }
 
 type seatState struct {
@@ -316,10 +328,11 @@ func (s *storage) loadState(id int64, searchID, key string) snapshot {
 	defer s.mu.Unlock()
 	var state snapshot
 	legacyKey, _, _ := strings.Cut(key, "#")
+	allowLegacy := strings.Count(key, "#") == 1
 	if !validSearchID(searchID) {
 		return snapshot{Key: key, Rides: make(map[string]map[string]seatState)}
 	}
-	if err := readJSON(s.statePath(id, searchID), &state); err != nil || (state.Key != key && state.Key != legacyKey) || state.Rides == nil {
+	if err := readJSON(s.statePath(id, searchID), &state); err != nil || (state.Key != key && !(allowLegacy && state.Key == legacyKey)) || state.Rides == nil {
 		return snapshot{Key: key, Rides: make(map[string]map[string]seatState)}
 	}
 	state.Key = key

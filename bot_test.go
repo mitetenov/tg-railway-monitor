@@ -79,7 +79,7 @@ func (h *botHarness) last() telegramRequest {
 
 func TestBotCompleteWizardAndStop(t *testing.T) {
 	h := newHarness(t)
-	for _, u := range []update{msg(-1001, 7, "/start"), cb(-1001, 7, "search:add"), cb(-1001, 7, "wiz_date:tomorrow"), cb(-1001, 7, "wiz_from:56014"), cb(-1001, 7, "wiz_to:57151"), cb(-1001, 7, "wiz_class:Business")} {
+	for _, u := range []update{msg(-1001, 7, "/start"), cb(-1001, 7, "search:add"), cb(-1001, 7, "wiz_date:tomorrow"), cb(-1001, 7, "wiz_from:56014"), cb(-1001, 7, "wiz_to:57151"), cb(-1001, 7, "wiz_time:any"), cb(-1001, 7, "wiz_class:Business")} {
 		h.handle(t, u)
 	}
 	c, err := h.b.store.load(-1001)
@@ -195,6 +195,7 @@ func TestWizardStationsAndStaleCallbacks(t *testing.T) {
 		t.Fatal("same station accepted")
 	}
 	h.handle(t, cb(1, 1, "wiz_to:57151"))
+	h.handle(t, cb(1, 1, "wiz_time:any"))
 	h.handle(t, cb(1, 1, "wiz_class:III"))
 	if h.b.wizards[[2]int64{1, 1}].step != "class" {
 		t.Fatal("invalid class accepted")
@@ -473,7 +474,7 @@ func TestBotMultipleSearchesPauseResumeDeleteAndStaleButtons(t *testing.T) {
 	h := newHarness(t)
 	h.handle(t, msg(1, 1, "/start"))
 	for _, class := range []string{"II", "Business"} {
-		for _, data := range []string{"search:add", "wiz_date:tomorrow", "wiz_from:56014", "wiz_to:57151", "wiz_class:" + class} {
+		for _, data := range []string{"search:add", "wiz_date:tomorrow", "wiz_from:56014", "wiz_to:57151", "wiz_time:any", "wiz_class:" + class} {
 			h.handle(t, cb(1, 1, data))
 		}
 	}
@@ -580,7 +581,7 @@ func TestSearchListPaginationAndExpiry(t *testing.T) {
 
 func TestWizardCrossingMidnightDoesNotCreatePastSearch(t *testing.T) {
 	h := newHarness(t)
-	for _, data := range []string{"search:add", "wiz_date:today", "wiz_from:56014", "wiz_to:57151"} {
+	for _, data := range []string{"search:add", "wiz_date:today", "wiz_from:56014", "wiz_to:57151", "wiz_time:any"} {
 		h.handle(t, cb(1, 1, data))
 	}
 	h.b.now = func() time.Time { return time.Date(2026, 10, 24, 0, 0, 0, 0, georgiaZone) }
@@ -591,5 +592,103 @@ func TestWizardCrossingMidnightDoesNotCreatePastSearch(t *testing.T) {
 	}
 	if !strings.Contains(h.last().Body["text"].(string), "Дата в прошлом") {
 		t.Fatal("wizard did not explain date expiry")
+	}
+}
+
+func TestWizardDepartureChoicesPersistAndRender(t *testing.T) {
+	h := newHarness(t)
+	a := h.b.poller.api.(*fakeAPI)
+	a.rides = []ride{
+		{Number: "814", Start: "2026-10-24T18:00:00Z"},
+		{Number: "812", Start: "2026-10-24T08:00:00+04:00"}, // Sold out, still selectable.
+		{Number: "810", Start: "2026-10-24T08:00:00Z"},
+		{Number: "812", Start: "2026-10-24T08:00:00Z"}, // Duplicate choice.
+		{Number: "816", Start: "invalid"},
+		{Start: "2026-10-24T09:00:00Z"},
+	}
+	for _, data := range []string{"search:add", "wiz_date:tomorrow", "wiz_from:56014", "wiz_to:57151"} {
+		h.handle(t, cb(1, 1, data))
+	}
+	w := h.b.wizards[[2]int64{1, 1}]
+	if w.step != "time" || len(w.departures) != 3 || w.departures[0].number != "810" || w.departures[2].time != "18:00" {
+		t.Fatal("unsorted, duplicate or invalid departure choices", w)
+	}
+	chosen := departure{time: "08:00", number: "812"}
+	keyboard := requestKeyboard(t, h.last())
+	if !keyboardHas(keyboard, chosen.callback()) || !keyboardHas(keyboard, "wiz_time:any") {
+		t.Fatal("missing sold-out departure or any-time option", keyboard)
+	}
+	h.handle(t, cb(1, 1, "wiz_class:Any"))
+	if w.step != "time" {
+		t.Fatal("class callback skipped departure selection")
+	}
+	h.handle(t, cb(1, 1, "lang_set:en"))
+	if !strings.Contains(h.last().Body["text"].(string), "Select departure time") || !keyboardHas(requestKeyboard(t, h.last()), chosen.callback()) {
+		t.Fatal("language switch lost departure choices")
+	}
+	h.handle(t, cb(1, 1, chosen.callback()))
+	chat, _ := h.b.store.load(1)
+	if len(chat.Searches) != 0 || w.step != "class" || w.draft.DepartureTime != "08:00" || w.draft.RideNumber != "812" {
+		t.Fatal("departure selection was not kept in draft", chat, w)
+	}
+	h.handle(t, cb(1, 1, "wiz_class:II"))
+	chat, err := h.b.store.load(1)
+	if err != nil || len(chat.Searches) != 1 || chat.Searches[0].DepartureTime != "08:00" || chat.Searches[0].RideNumber != "812" {
+		t.Fatal("selected departure was not saved", chat, err)
+	}
+	label := requestKeyboard(t, h.last()).Rows[0][0].Text
+	if !strings.Contains(label, "08:00 · №812") {
+		t.Fatal("home omitted selected departure", label)
+	}
+	h.b.languages = make(map[int64]string)
+	h.handle(t, cb(1, 1, "search:view:"+chat.Searches[0].ID))
+	if !strings.Contains(h.last().Body["text"].(string), "Departure: 08:00 · №812") {
+		t.Fatal("reopened search omitted departure", h.last())
+	}
+}
+
+func TestWizardDepartureFailureEmptyRetryAndPagination(t *testing.T) {
+	h := newHarness(t)
+	a := h.b.poller.api.(*fakeAPI)
+	a.err = errors.New("provider unavailable")
+	for _, data := range []string{"search:add", "wiz_date:tomorrow", "wiz_from:56014", "wiz_to:57151"} {
+		h.handle(t, cb(1, 1, data))
+	}
+	if !strings.Contains(h.last().Body["text"].(string), "Не удалось загрузить рейсы") || !keyboardHas(requestKeyboard(t, h.last()), "wiz_time:any") {
+		t.Fatal("failed request blocked wizard", h.last())
+	}
+	a.err = nil
+	h.handle(t, cb(1, 1, "wiz_time:reload"))
+	if !strings.Contains(h.last().Body["text"].(string), "рейсы не найдены") {
+		t.Fatal("empty result was not explained", h.last())
+	}
+	for i := 0; i < 10; i++ {
+		a.rides = append(a.rides, ride{Number: scalar(fmt.Sprint(800 + i)), Start: fmt.Sprintf("2026-10-24T%02d:00:00Z", i)})
+	}
+	h.handle(t, cb(1, 1, "wiz_time:reload"))
+	w := h.b.wizards[[2]int64{1, 1}]
+	stale := w.departures[0].callback()
+	if !keyboardHas(requestKeyboard(t, h.last()), "page:wiz_time:1") || keyboardHas(requestKeyboard(t, h.last()), w.departures[8].callback()) {
+		t.Fatal("wrong first departure page")
+	}
+	h.handle(t, cb(1, 1, "page:wiz_time:999"))
+	if !keyboardHas(requestKeyboard(t, h.last()), w.departures[9].callback()) || !keyboardHas(requestKeyboard(t, h.last()), "page:wiz_time:0") {
+		t.Fatal("wrong last departure page")
+	}
+	for _, data := range []string{"wiz_time:unknown", "wiz_time:-1", "page:wiz_time:bad"} {
+		h.handle(t, cb(1, 1, data))
+		if w.step != "time" {
+			t.Fatal("invalid choice advanced wizard")
+		}
+	}
+	a.rides = a.rides[1:]
+	h.handle(t, cb(1, 1, "wiz_time:reload"))
+	h.handle(t, cb(1, 1, stale))
+	if w.step != "time" {
+		t.Fatal("old choice selected a different train after refresh")
+	}
+	h.handle(t, cb(1, 1, "cancel"))
+	if len(h.b.wizards) != 0 || !keyboardHas(requestKeyboard(t, h.last()), "search:add") {
+		t.Fatal("time selection could not be canceled")
 	}
 }

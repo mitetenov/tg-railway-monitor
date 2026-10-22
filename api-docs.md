@@ -62,6 +62,16 @@ persisted route/date snapshot. Errors do not clear it; absent rides/classes in
 a successful response do. Notifications contain all currently available rides
 matching the filter when any seats appear or increase.
 
+The wizard uses the same daily availability response for departure choices,
+including returned rides with zero seats. Choices contain the upstream `HH:MM`
+and ride number, are deduplicated, and are sorted by time then number. "Any time"
+is always available, including after an empty result or provider error.
+Selected departures persist as `departure_time` and `ride_number`; notifications
+include only rides matching both values. The provider request still covers the
+whole day. Existing searches without these fields include all departures and
+retain their notification history. Filtered snapshot keys include the departure
+time and number and do not reuse an unrestricted or legacy baseline.
+
 ## Purchase URL
 
 ```text
