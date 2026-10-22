@@ -161,3 +161,5 @@ it. Time strings from railway responses are displayed as returned (no conversion
 Push to `origin`; branches `feat/...`, `fix/...`, `refactor/...`; PRs target
 `main` only. Rebase/merge main before a PR; squash-merge only when requested.
 Preserve unrelated dirty files and untracked `docs/`. Never add a coauthor trailer.
+Keep `.worktrees/` out of the Git index; local checkouts must not become gitlinks
+without `.gitmodules`, which breaks checkout credential cleanup in CI.

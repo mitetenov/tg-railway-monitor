@@ -50,6 +50,10 @@ Dockerfile, контекст сборки, последние запуски Act
    обновления Actions в один PR. [Рекомендации GitHub](https://docs.github.com/en/actions/reference/security/secure-use),
    [настройки Dependabot](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference).
 7. Retention записей Docker build ограничен одним днём, как и digest artifacts.
+8. Убраны семь старых gitlinks из `.worktrees/`, ошибочно попавших в индекс без
+   `.gitmodules`. Первый PR-запуск выявил, что они ломают cleanup credentials в
+   checkout с `persist-credentials: false`. Локальные каталоги сохранены;
+   `.worktrees/` уже исключён через `.gitignore`.
 
 Локальный контрольный замер Go 1.27.3 на macOS arm64: одинаковая последовательность
 `go vet` и `go test -vet=off -race -count=1` с пустым и затем прогретым `GOCACHE`.
@@ -123,6 +127,7 @@ Concurrency оставлен без изменений. По правилам Gi
   daemon не подключился к опубликованному loopback-порту. Это ограничение
   локальной проверки; временные контейнеры и теги удалены. Внешние registry
   использовались только для чтения.
-- Новый запуск GitHub Actions ещё не выполнялся. После публикации ветки нужно
-  проверить первый холодный и следующий прогретый CI-запуск; после merge —
-  отдельно Docker build/cache и публикацию обоих manifests в Docker Hub.
+- Доставка изменений отслеживается в [PR #49](https://github.com/mitetenov/tg-railway-monitor/pull/49).
+  После исправления gitlinks нужно дождаться успешного CI на финальном коммите;
+  после merge — отдельно проверить Docker build/cache и публикацию обоих
+  manifests в Docker Hub. Ускорение прогретого Linux CI ещё не измерено.
