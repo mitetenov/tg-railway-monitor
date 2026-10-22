@@ -1,242 +1,103 @@
 # AGENTS.md — tg-ticket-monitor
 
-Instructions for AI coding agents working in this repository.
-Always keep this file current when the codebase changes.
+Instructions for coding agents. Keep this file current when the codebase changes.
 
 ## Project
 
-A Telegram bot that monitors Georgian Railway (tre.ge) ticket availability.
-Users configure a route via `/start` wizard and the bot polls every 60 s,
-notifying when tickets appear or seat counts change. Supports EN / RU.
-
-- **Language:** Python 3.11
-- **Dependencies:** `python-telegram-bot>=20,<21`, `aiohttp>=3.9,<4`, `python-dotenv>=1.0`
-- **Deployment:** Docker (Python 3.11-alpine) with `docker compose`
-- **Remote:** `mitetenov/tg-railway-monitor` (origin)
-- **Version:** `0.1.0` (read from `version.txt`)
+Telegram bot monitoring Georgian Railway (tre.ge) tickets. Go 1.27.3, standard
+library only, no external modules. Remote: `mitetenov/tg-railway-monitor`.
+Version: `version.txt`. Docker image: `mitetenov/tg-ticket-monitor`.
 
 ## Build, test, run
 
-```bash
-# Syntax check (exclude venv, cache, tests, and git worktrees)
-python -m compileall . -q -x '.venv|__pycache__|tests|.worktrees'
-
-# Run all tests
-pytest -v
-
-# Run specific test file
-pytest -v tests/test_bot.py
-
-# Run a single test
-pytest -v tests/test_bot.py::test_cmd_start_shows_date_keyboard
-
-# Run bot locally (needs BOT_TOKEN in .env)
-cp .env.example .env   # then edit .env with real token
-python bot.py
+```sh
+go test -race -count=1 ./...
+go vet ./...
+go build -trimpath -o ticket-monitor .
+cp .env.example .env  # set BOT_TOKEN
+./ticket-monitor
+./ticket-monitor --check    # resource/storage check, no network or token
+./ticket-monitor --version
 ```
 
-There is no `conftest.py`, `pyproject.toml`, or `setup.cfg` — tests import
-from the root by inserting `..` into `sys.path`:
-
-```python
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-```
-
-Test files in `tests/` use `pytest.mark.asyncio` for async tests (rare).
+Tests use local HTTP/TLS fixtures and temporary storage; no real Telegram token,
+production data, or live railway service is needed. `testdata/python_notifications.json`
+contains 160 notification cases captured from committed Python HEAD `4442a00`.
 
 ## Architecture
 
-### Entry point
+| File | Purpose |
+|---|---|
+| `main.go` | Environment, HTTP clients, signal handling, startup |
+| `bot.go` | Sequential Telegram update loop and per-chat/per-user wizard |
+| `telegram.go` | Telegram Bot API HTTP client, JSON models, safe errors |
+| `railway.go` | tre.ge station/search client, purchase URLs, class filters |
+| `poller.go` | One cancellable goroutine per chat, availability diff and delivery |
+| `storage.go` | Atomic per-chat JSON config and snapshot files |
+| `i18n.go` | Embedded translations and station dictionary |
+| `stations.json` | Single source of station names/codes/popularity/slugs |
+| `locales/{en,ru}/messages.json` | User-facing translations |
+| `*_test.go`, `testdata/` | Behavioral tests and Python parity fixtures |
 
-`bot.py` — builds the PTB `Application`, registers handlers, runs polling.
+Only `/start`, `/stop`, `/lang` are registered commands. Do not restore removed
+`/setroute`, `/setdate`, `/setclass`, `/status` commands. Wizard steps: date,
+custom date, departure, arrival, class. Old callback strings remain supported.
+Travel dates always use **Asia/Tbilisi**, regardless of user/host timezone.
 
-### Registered bot commands (bot.py:609-614)
+Wizard drafts remain in memory until class selection; cancellation preserves the
+previous active route. Language buttons work during any wizard step. `/stop`
+cancels the worker, waits for it to exit, clears monitor fields/state while preserving language, and clears drafts.
 
-| Command  | Handler          | Description                         |
-|----------|------------------|-------------------------------------|
-| `/start` | `cmd_start`      | Multi-step wizard (ConversationHandler) |
-| `/stop`  | `cmd_stop`       | Stop monitoring, delete config      |
-| `/lang`  | `cmd_lang`       | Inline keyboard for lang selection  |
-|| —        | `fallback_handler` | Catches unrecognised messages (MessageHandler, not a BotCommand) |
+## Persistence and polling
 
-### `/start` wizard states (bot.py:195)
-
-```python
-(DATE_SELECT, WAITING_CUSTOM_DATE, DEPARTURE_SELECT, ARRIVAL_SELECT, CLASS_SELECT) = range(5)
-```
-
-The wizard uses inline keyboards at each step. No more `/setroute`, `/setdate`, `/setclass` — those were removed.
-
-### `/lang` feature
-
-`/lang` (no argument) → inline keyboard with EN / RU buttons.
-Callback query `lang_set:{code}` handled by `lang_callback()` (bot.py:555-575).
-Persists via `set_user_language()` to per-chat JSON config.
-
-### Module map
-
-| Module              | Purpose |
-|---------------------|---------|
-| `bot.py`            | PTB Application, handlers, wizard |
-| `poller.py`         | Background polling loop per chat, stateful diff |
-| `api.py`            | Factory: `get_ticket_api(source)` + backward-compat aliases |
-| `_api_base.py`      | `TicketApi` ABC, `API_BASE`, `API_KEY` constants |
-| `api_tre.py`        | `TreGeApi(TicketApi)` — tre.ge implementation, purchase URL builder |
-| `api_explorer.py`   | API exploration utilities |
-| `config_manager.py` | Per-chat JSON config CRUD in `data/{chat_id}.json` |
-| `monitor_config.py` | Validated route/date/class value object and expiry rule |
-| `ticket_domain.py` | Seat-class identifiers and display names shared by active code |
-| `i18n.py`           | `Translation` class, plurals, user lang detection/storage, station name translation |
-| `stations.py`       | Single source of truth for station data, all mappings derived from `_STATION_DATA` |
-| `utils.py`          | `format_time`, `fmt_duration` helpers |
-| `patch_slots.py`    | Python 3.13 PTB compatibility patch |
-| `_debug_slots.py`   | Debug utilities for `__slots__` issues |
-| `_debug_updater.py` | Debug utilities for PTB Updater |
-
-### API architecture
-
-```
-TicketApi (ABC)          ← _api_base.py
-    ├── get_stations()
-    ├── search_trips()
-    ├── get_availability_calendar()
-    ├── get_seats()           (NotImplementedError on TreGeApi)
-    └── get_prices()          (NotImplementedError on TreGeApi)
-
-TreGeApi(TicketApi)       ← api_tre.py
-    ├── build_purchase_url()  — generates tre.ge search links
-
-get_ticket_api(source)    ← api.py:32 (factory, singleton)
-init_ticket_api(source)   ← api.py:64 (startup initialiser)
-```
-
-`_SOURCE_REGISTRY` in `api.py:24` maps source names to classes:
-
-```python
-_SOURCE_REGISTRY = {"trege": TreGeApi}
-```
-
-### Poller internals
-
-`poller.py` runs one asyncio task per chat, polling every 60 s:
-
-- `_running_tasks: dict[int, asyncio.Task]` — active tasks by chat_id
-- `_state: dict[int, dict]` — previous seat counts for stateful diff (NOT `_notified`)
-- `_paused: dict[int, bool]` — pause state per chat
-
-Key functions:
-- `start(bot, chat_id)` — launch background polling
-- `stop(chat_id)` — cancel polling task
-- `pause(chat_id)` / `resume(bot, chat_id)` / `is_paused(chat_id)` — lifecycle
-- `active_count()` — number of active monitorees
-- `_check_and_notify(bot, chat_id)` — single poll cycle with diff logic
-
-Notifications include purchase links generated by `TreGeApi.build_purchase_url()`.
-
-### i18n system
-
-3-tier language detection (i18n.py):
-1. In-memory cache (`_user_lang_cache`)
-2. Per-chat JSON config (`language` key)
-3. Telegram `User.language_code`
-
-Supported: `en` (English), `ru` (Russian)
-Locale files: `locales/{lang}/messages.json`
-
-Station name translation: `translate_station_name(code, lang, fallback)` in i18n.py.
-Georgian (ka) station names defined in `stations.py` alongside English names.
-
-### Config manager
-
-Per-chat configs stored as `data/{chat_id}.json`:
-
-```python
-load_config(chat_id)          → dict (or {})
-save_config(chat_id, config)  → atomic replace
-load_monitor_config(chat_id)  → MonitorConfig (validated)
-clear_monitor_config(chat_id) → keeps language, removes monitor state
-is_config_complete(d)         → bool (valid route/date/class)
-```
-
-### Data flow
-
-```
-User → /start wizard draft → config_manager.save_monitor_config()
-                          ↓
-User receives "monitoring started" ← poller.start(bot, chat_id)
-                          ↓
-poller loop (every 60s):
-  load_config → get_available_rides(session, from, to, date)
-  → stateful diff against _state[chat_id]
-  → if changes: send Telegram notification (with purchase URLs)
-```
-
-## Git workflow
-
-- Push to **origin** (`mitetenov/tg-railway-monitor`)
-- Branch naming: `feat/...`, `fix/...`, `refactor/...`
-- Create PRs against origin's `main` branch only
-- Rebase or merge `main` before opening a PR
-- Squash-merge PRs (keep linear history)
-
-## Conventions
-
-- **Docstrings:** Google-style. Every public function has a docstring.
-- **Type hints:** Used throughout. `typing.Optional`, `dict`, `list` for parameter/return types.
-- **Logging:** `logging.getLogger(__name__)`, no root logger.
-- **Section headers:** Code blocks separated with `# ═══════ Section Name ═══════`.
-- **Config:** JSON files in `data/` directory (gitignored).
-- **Secrets:** `.env` file (gitignored), loaded via `dotenv.load_dotenv()`.
-- **No `config.json` file** — that was removed. Configs are per-chat.
+- Config: `data/{chat_id}.json`. Keys are compatible with the Python version:
+  `from_station_code`, `to_station_code`, `from_station`, `to_station`, `date`,
+  `seat_class` (`Any`, `I`, `II`, `Business`), `language` (`en`, `ru`).
+- Snapshot: `data/{chat_id}.state.json`: `key` is `from>to@date#class`; legacy keys without the class are migrated; `rides` maps
+  ride numbers to class IDs, each containing `seats` and `price`.
+- JSON writes use a private temporary file, fsync, and atomic rename.
+- Complete configurations resume automatically on startup. Past travel dates expire at Georgian midnight, preserving the interface language and clearing monitor state. Snapshots suppress
+  duplicate notifications after restart. Corrupt configs are logged/skipped;
+  corrupt state is disposable. Storage preflight fails startup on unwritable data.
+- Check immediately, then 60 seconds after each completed check. Reuse HTTP clients.
+- Notify on newly available seats or an increase, grouped across all available
+  rides in the selected class. Decreases only update state. A successful empty
+  result resets stale rides; API errors preserve state. Commit state after send
+  succeeds so failed notifications retry. Multi-message delivery is at-least-once.
+- No legacy standalone/threading monitor or Python compatibility patches remain.
 
 ## Docker
 
-```bash
-# Build
-VERSION=$(cat version.txt)
-docker build --build-arg VERSION=$VERSION -t mitetenov/tg-ticket-monitor:$VERSION -t mitetenov/tg-ticket-monitor:latest .
-
-# Run
+```sh
+docker build --build-arg VERSION=$(cat version.txt) -t tg-ticket-monitor:local .
+docker run --rm --network none tg-ticket-monitor:local --version
+docker compose build
 docker compose up -d
-
-# Logs
-docker compose logs -f
-
-# Rebuild after changes
-docker compose build --no-cache && docker compose up -d
 ```
 
-Image: `mitetenov/tg-ticket-monitor:latest` (also tagged with version).
-Data persistence: Docker named volume `data` mounted at `/app/data`.
+Multi-stage native build with cross-compilation for amd64/arm64. `scratch` runtime
+contains the static binary, CA certificates, embedded locales/timezone database,
+and writable `/app/data` and `/tmp`. **Keep UID/GID 1000:1000**: existing volumes
+belong to this UID. Changing it requires an explicit ownership migration.
+`.dockerignore` is an allowlist: secrets, runtime data, worktrees, docs and tests
+are excluded. Manifest and runtime assets precede source; compiler cache uses a
+BuildKit cache mount. Version metadata is last. Avoid `--no-cache` in normal builds.
 
-## Common pitfalls
+## Environment and conventions
 
-1. **Tests need `BOT_TOKEN` env var** — set before import (test_bot.py:19).
-2. **No `conftest.py`** — each test file sets up `sys.path` manually.
-3. **Poller global state** — `_state`, `_paused`, `_running_tasks` are module-level dicts. Tests must clear them between cases.
-4. **`python-telegram-bot` 3.13 compat** — `patch_slots.py` monkey-patches `__slots__` issues. Only needed on Python 3.13+ bare-metal; Docker uses 3.11.
-5. **Do NOT add `/setroute`, `/setdate`, `/setclass`, `/status` commands** — these were removed. All config goes through the `/start` wizard.
-6. **Station data lives only in `stations.py`** — don't duplicate station names/codes/slugs elsewhere.
-7. **Seat-class identifiers live only in `ticket_domain.py`** — don't duplicate them in handlers or providers.
-8. **The compileall command excludes `.worktrees/`** when run as `python -m compileall . -q -x '.venv|__pycache__|tests|.worktrees'` — the extra exclusion was added because Hermes git worktrees can exist in the repo.
+`BOT_TOKEN` required; `.env` is loaded without overriding environment variables.
+`DATA_DIR` defaults to `data` locally and `/app/data` in Docker. `TICKET_SOURCE`
+only accepts `trege`. Optional test/provider overrides: `TRE_API_BASE`,
+`TRE_API_KEY`, `TELEGRAM_API_BASE`. Never log token-bearing request URLs.
 
-## Test file listing
+Use `gofmt`, idiomatic Go comments on exported symbols, contextual errors and
+`slog`. Synchronize shared worker/storage state and test concurrent lifecycle
+changes with the race detector. Avoid holding storage locks across network I/O.
+Station fallback excludes unserved Kutaisi city `57530`; API results may re-enable
+it. Time strings from railway responses are displayed as returned (no conversion).
 
-```
-tests/
-├── check_syntax.py                — syntax/lint checks
-├── test_api.py                    — API backward-compat aliases
-├── test_api_base.py               — TicketApi ABC
-├── test_api_factory.py            — get_ticket_api() factory
-├── test_api_tre.py                — TreGeApi implementation
-├── test_bot.py                    — Bot handlers, wizard flow
-├── test_config_manager.py         — Config CRUD
-├── test_config_manager_negative.py— Config error paths
-├── test_i18n.py                   — Translation, plurals, station names
-├── test_monitor_config.py          — Monitor configuration validation
-├── test_poller_delivery.py         — Poller notification delivery guarantees
-├── test_poller_negative.py        — Poller error/edge cases
-├── test_poller_restore.py         — Snapshot persistence and restart restore
-├── test_utils.py                   — Notification formatting helpers
-└── test_user_lang.py              — User language detection/persistence
-```
+## Git
+
+Push to `origin`; branches `feat/...`, `fix/...`, `refactor/...`; PRs target
+`main` only. Rebase/merge main before a PR; squash-merge only when requested.
+Preserve unrelated dirty files and untracked `docs/`. Never add a coauthor trailer.

@@ -1,94 +1,49 @@
 # syntax=docker/dockerfile:1
-# ─── Telegram Ticket Monitor — Docker image ──────────────────────────────
-#
-# Build with version (recommended):
-#   VERSION=$(cat version.txt)
-#   docker build --build-arg VERSION=$VERSION \
-#     -t mitetenov/tg-ticket-monitor:$VERSION \
-#     -t mitetenov/tg-ticket-monitor:latest .
-#
-# Push:
-#   docker push mitetenov/tg-ticket-monitor:$VERSION
-#   docker push mitetenov/tg-ticket-monitor:latest
-#
-# Environment variables:
-#   BOT_TOKEN  (required) — Telegram bot token from @BotFather
-#   TZ         (optional) — container timezone, e.g. Asia/Tbilisi
-#
-# Layer order is deliberate: everything that changes rarely (base image,
-# OS packages, user, Python deps) comes first; the application code and
-# the VERSION label — which change on every commit — come last, so a
-# version bump never invalidates the dependency layers.
-#
-ARG PYTHON_VERSION=3.11
+ARG GO_VERSION=1.27.3
 
-# ═══════════════════════════════════════════════════════════════════════
-# Stage 1 — build dependencies into an isolated prefix
-# ═══════════════════════════════════════════════════════════════════════
-FROM python:${PYTHON_VERSION}-alpine AS deps
+# Build natively and cross-compile; releases do not require QEMU.
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
+WORKDIR /src
+ENV CGO_ENABLED=0
 
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_ROOT_USER_ACTION=ignore
+# No third-party modules. Keep the manifest before source for stable caching.
+COPY go.mod ./
+RUN go mod download
 
-WORKDIR /tmp/build
-COPY requirements.txt .
+# Static runtime assets change independently of the application binary.
+RUN mkdir -p /runtime/app/data /runtime/tmp /runtime/etc/ssl/certs \
+    && chmod 1777 /runtime/tmp \
+    && chown 1000:1000 /runtime/app/data \
+    && cp /etc/ssl/certs/ca-certificates.crt /runtime/etc/ssl/certs/
 
-# The BuildKit cache mount keeps pip's wheel/HTTP cache between local
-# rebuilds without ever landing in an image layer.  Installing into
-# /install (rather than the system prefix) means the runtime stage copies
-# exactly the dependencies — no pip bytecode, no build leftovers.
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    pip install --prefix=/install -r requirements.txt
+COPY *.go stations.json ./
+COPY locales/ ./locales/
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -buildvcs=false \
+    -ldflags='-s -w' -o /out/ticket-monitor .
 
-# ═══════════════════════════════════════════════════════════════════════
-# Stage 2 — runtime
-# ═══════════════════════════════════════════════════════════════════════
-FROM python:${PYTHON_VERSION}-alpine AS runtime
+# Version stamping is isolated from compilation and its cache.
+FROM build AS metadata
+COPY version.txt /out/version.txt
+ARG VERSION
+RUN if [ -n "$VERSION" ]; then printf '%s\n' "$VERSION" > /out/version.txt; fi
 
-# ── Non-root user id ───────────────────────────────────────────────────
-# 1000 is load-bearing, not arbitrary: it is what `adduser -D` assigned on
-# Alpine in every previously published image, so it is the owner of the
-# files in existing `data` volumes.  Docker only applies the image's
-# ownership when a volume is empty, so raising this silently makes every
-# deployment with an existing volume fail on write:
-#
-#   PermissionError: [Errno 13] Permission denied: '/app/data/<chat>.json'
-#
-# Change it only together with a documented migration (see DEPLOY.md).
-ARG MONITOR_UID=1000
-
-# ── OS packages + non-root user (one layer, changes almost never) ──────
-# tzdata lets the operator pin the container clock with -e TZ=Asia/Tbilisi.
-RUN apk add --no-cache tzdata \
-    && adduser -D -H -u ${MONITOR_UID} monitor
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
-
-# ── Python dependencies (invalidated only by requirements.txt) ─────────
-COPY --from=deps /install /usr/local
-
+# Only CA roots, writable directories, and the static executable ship.
+# Locales, station names, and timezone data are embedded in the executable.
+FROM scratch AS runtime
+COPY --from=build /runtime/ /
+COPY --from=build /out/ticket-monitor /app/ticket-monitor
 WORKDIR /app
+USER 1000:1000
+ENV DATA_DIR=/app/data
+ENTRYPOINT ["/app/ticket-monitor"]
 
-# ── Runtime data directory (per-chat JSON configs, normally a volume) ──
-RUN mkdir -p /app/data && chown monitor:monitor /app/data
-
-# ── Application code (changes every commit — copied last) ──────────────
-# --chown avoids a `chown -R` layer that would duplicate the whole tree.
-# locales/ is not optional: without it i18n silently renders every message
-# as a "?key?" placeholder instead of failing loudly.
-COPY --chown=monitor:monitor *.py ./
-COPY --chown=monitor:monitor locales/ ./locales/
-
-USER monitor
-
-# ── Build-time version metadata (last: invalidates nothing above) ──────
-ARG VERSION=0.0.0
+# Version changes invalidate only this tiny final layer and image metadata.
+COPY --from=metadata /out/version.txt /app/version.txt
+ARG VERSION=0.1.0
 LABEL org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.title="tg-ticket-monitor" \
       org.opencontainers.image.description="Telegram bot for monitoring train ticket availability" \
       org.opencontainers.image.source="https://github.com/mitetenov/tg-railway-monitor"
-
-# bot.py reads BOT_TOKEN straight from the environment (python-dotenv
-# never overrides real env vars), so no entrypoint shim is needed.
-ENTRYPOINT ["python3", "bot.py"]

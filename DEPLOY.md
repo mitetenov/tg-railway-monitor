@@ -1,175 +1,61 @@
-# tre.ge Telegram Ticket Monitor — Deployment
+# Развёртывание и переход на Go
 
-## 🐳 Docker (рекомендуемый способ)
-
-### Требования
-
-- Docker Engine 24+ и Docker Compose v2+
-- Docker daemon включён в автозапуске:
-  ```bash
-  systemctl is-enabled docker   # должен быть enabled
-  ```
-
-### Быстрый запуск
-
-```bash
-cd /root/tg-ticket-monitor
-
-# 1. Создайте .env с реальным BOT_TOKEN от @BotFather
-cp .env.example .env
-nano .env
-
-# 2. Соберите и запустите
-docker compose up -d
-
-# 3. Проверьте статус
-docker ps --filter name=tg-ticket-monitor
-
-# 4. Логи
+```sh
+cp .env.example .env  # BOT_TOKEN от @BotFather
+docker compose up -d --build
 docker compose logs -f
 ```
 
-Контейнер автоматически запускается при старте системы благодаря:
-- **Docker daemon** включён в systemd (`systemctl enable docker`)
-- **`restart: unless-stopped`** в `docker-compose.yml` — Docker перезапускает контейнер при каждом запуске демона
+Для опубликованного образа: `docker compose pull && docker compose up -d`.
+Рекомендуется фиксировать тег/дайджест образа при обновлениях. CI публикует образ
+только после push в main; локальная сборка сама ничего не публикует.
 
-### Команды управления
+## Обновление существующего Python-бота
 
-| Действие | Команда |
-|----------|---------|
-| Запуск | `docker compose up -d` |
-| Остановка | `docker compose down` |
-| Перезапуск | `docker compose restart` |
-| Логи (follow) | `docker compose logs -f` |
-| Логи (последние 50) | `docker compose logs --tail=50` |
-| Пересборка | `docker compose build --no-cache && docker compose up -d` |
-| Проверка статуса | `docker ps --filter name=tg-ticket-monitor` |
+Go читает прежние `data/{chat_id}.json` и `data/{chat_id}.state.json` без конвертации.
+Сохраняйте существующий Compose project name и том `data:/app/data`. Не запускайте
+две копии бота с одним токеном одновременно: Telegram long polling конфликтует.
 
-### Переменные окружения
+1. Сохраните текущий тег/дайджест образа для отката и сделайте резервную копию тома.
+2. Соберите новый образ: `docker compose build`.
+3. Обновите контейнер: `docker compose up -d`.
+4. Проверьте логи: сообщение `Ticket monitor started`, число `restored_chats` и
+   отсутствие ошибок записи или API. Настройки в Telegram задаются через `/start`.
 
-Передаются через `.env` файл (автоматически загружается `docker compose`):
+Пример резервной копии (подставьте фактическое имя тома):
 
-| Переменная | Обязательно | Описание |
-|-----------|-------------|----------|
-| `BOT_TOKEN` | ✅ Да | Токен бота от [@BotFather](https://t.me/BotFather) |
-| `ROUTE` | ❌ Нет | Код станции назначения (умолчание) |
-| `DATE` | ❌ Нет | Дата поездки (умолчание, YYYY-MM-DD) |
-| `CLASS` | ❌ Нет | Класс (1, 2, 3) |
-
-### Персистентность данных
-
-Per-chat конфиги хранятся в томе Docker `data:/app/data`. Данные сохраняются между перезапусками контейнера и не теряются при `docker compose down`.
-
-```bash
-# Просмотр данных внутри тома
-docker run --rm -v tg-ticket-monitor_data:/data alpine ls -la /data
-```
-
-#### Владелец файлов в томе
-
-Контейнер работает от непривилегированного пользователя `monitor` с **uid 1000**.
-Docker переносит владельца из образа только в **пустой** том — у существующего тома
-владелец остаётся прежним. Поэтому смена uid ломает запись:
-
-```
-PermissionError: [Errno 13] Permission denied: '/app/data/<chat_id>.json'
-```
-
-Бот проверяет это при старте и пишет в лог, что делать:
-
-```bash
-docker compose logs | grep "Configuration storage is unusable"
-```
-
-Если владелец разошёлся, приведите том к uid контейнера:
-
-```bash
-docker compose down
-docker run --rm -v tg-ticket-monitor_data:/data alpine chown -R 1000:1000 /data
+```sh
+docker compose stop bot
+docker run --rm -v tg-railway-monitor_data:/data:ro -v "$PWD":/backup \
+  alpine tar czf /backup/railway-data-backup.tgz -C /data .
 docker compose up -d
 ```
 
-> **Если вы разворачивались с нуля 28–29 июля 2026**, образ в тот момент работал от
-> uid 10001, и ваш том принадлежит ему. Команда выше приведёт его к 1000 —
-> данные при этом не теряются.
+Для отката верните прежний тег/дайджест в `image`, затем выполните
+`docker compose up -d --no-build`. Форматы конфигов и снимков обратно совместимы.
+Незавершённый мастер настройки в память не сохраняется: начните его заново
+командой `/start` после перезапуска.
 
-`MONITOR_UID` в `Dockerfile` вынесен в `ARG`, но менять его без такой миграции нельзя.
+## Права данных
 
-### Пересборка после изменений кода
+Контейнер сохраняет UID/GID **1000:1000**. Существующие тома продолжают работать.
+При недоступном каталоге бот завершится с понятной ошибкой до подключения Telegram.
+Если том создан старым образом с другим владельцем, исправьте владельца явно:
 
-```bash
-cd /root/tg-ticket-monitor
-git pull                         # или внесите изменения вручную
-docker compose build --no-cache  # пересобрать образ
-docker compose up -d             # перезапустить
-```
-
----
-
-## ⚠️ Миграция с systemd на Docker
-
-Если ранее проект был установлен через systemd (bare-metal), выполните следующие шаги:
-
-### 1. Остановите и отключите systemd-сервис
-
-```bash
-systemctl stop tg-ticket-monitor
-systemctl disable tg-ticket-monitor
-rm /etc/systemd/system/tg-ticket-monitor.service
-rm /etc/systemd/system/multi-user.target.wants/tg-ticket-monitor.service
-systemctl daemon-reload
-```
-
-### 2. Убедитесь, что данные не потеряются
-
-Per-chat конфиги находятся в `/root/tg-ticket-monitor/data/`. Docker-композ использует том `data:/app/data`. При первом запуске `docker compose up`:
-- Если том ещё не существует — Docker создаёт пустой том
-- Данные из `/root/tg-ticket-monitor/data/` **не копируются в том автоматически**
-
-**Чтобы сохранить существующие данные:**
-```bash
-# Скопировать данные в том Docker
-docker run --rm \
-  -v /root/tg-ticket-monitor/data:/src \
-  -v tg-ticket-monitor_data:/dst \
-  alpine sh -c "cp -r /src/* /dst/ 2>/dev/null; ls -la /dst"
-```
-
-Или используйте bind mount вместо тома (временно измените `docker-compose.yml`):
-```yaml
-volumes:
-  - /root/tg-ticket-monitor/data:/app/data  # bind mount вместо named volume
-```
-
-### 3. Перенесите .env
-
-Файл `.env` уже находится в `/root/tg-ticket-monitor/.env` и будет автоматически загружен `docker compose`.
-
-### 4. Запустите Docker-контейнер
-
-```bash
+```sh
+docker compose stop bot
+docker run --rm -v tg-railway-monitor_data:/data alpine chown -R 1000:1000 /data
 docker compose up -d
 ```
 
-### 5. Проверьте логи
+Для проверки образа без сети/токена и без доступа к рабочему тому:
 
-```bash
-docker compose logs -f
+```sh
+docker run --rm --network none --read-only \
+  --tmpfs /app/data:uid=1000,gid=1000,mode=700 \
+  tg-ticket-monitor:local --check
 ```
 
----
-
-## 🗑️ Устаревший способ: systemd (legacy)
-
-> **Проект переведён на Docker в июне 2026.**
-> Инструкции по systemd-деплою сохранены в репозитории для истории:
-> - `deploy.sh` — скрипт деплоя (legacy)
-> - `tg-ticket-monitor.service` — unit-файл (legacy)
-> - README.md → раздел «Запуск через systemd (устаревший способ)»
-
-Вкратце, для bare-metal запуска требовалось:
-1. Установить зависимости в `.venv`
-2. Применить `patch_slots.py` (для Python 3.13)
-3. Установить systemd unit и запустить сервис
-
-Docker решает все эти проблемы «из коробки» — изолированное окружение, фиксированная версия Python, автозапуск через restart policy.
+В `scratch` нет shell: просмотр данных и резервные копии выполняйте отдельным
+временным контейнером с подключённым томом. SIGTERM корректно отменяет запросы и
+дожидается завершения фоновых проверок; стандартного времени остановки Compose хватает.
