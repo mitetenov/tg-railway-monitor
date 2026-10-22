@@ -119,8 +119,8 @@ func run() error {
 	if token == "" {
 		return errors.New("BOT_TOKEN not set in environment or .env file")
 	}
-	if source := strings.ToLower(strings.TrimSpace(env("TICKET_SOURCE", "trege"))); source != "trege" {
-		return fmt.Errorf("unknown TICKET_SOURCE %q; supported: trege", source)
+	if source := strings.ToLower(strings.TrimSpace(env("TICKET_SOURCE", "trege"))); source != "trege" && source != "tre.ge" {
+		return fmt.Errorf("unknown TICKET_SOURCE %q; supported: trege (alias: tre.ge)", source)
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

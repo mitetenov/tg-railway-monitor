@@ -101,7 +101,8 @@ BuildKit cache mount. Version metadata is last. Avoid `--no-cache` in normal bui
 
 `BOT_TOKEN` required; `.env` is loaded without overriding environment variables.
 `DATA_DIR` defaults to `data` locally and `/app/data` in Docker. `TICKET_SOURCE`
-only accepts `trege`. Optional test/provider overrides: `TRE_API_BASE`,
+accepts `trege` (default) and its alias `tre.ge`, ignoring case and surrounding
+whitespace. Optional test/provider overrides: `TRE_API_BASE`,
 `TRE_API_KEY`, `TELEGRAM_API_BASE`. Never log token-bearing request URLs.
 
 Use `gofmt`, idiomatic Go comments on exported symbols, contextual errors and
