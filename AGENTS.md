@@ -32,6 +32,7 @@ contains 160 notification cases captured from committed Python HEAD `4442a00`.
 | `bot.go` | Search list/cards, sequential Telegram update loop and per-chat/per-user wizard |
 | `telegram.go` | Telegram Bot API HTTP client, JSON models, safe errors |
 | `railway.go` | tre.ge station/search client, purchase URLs, class filters |
+| `timetable.go` | Independent tre.ge timetable client and anonymous access cache |
 | `poller.go` | One cancellable goroutine per search, availability diff and delivery |
 | `storage.go` | Atomic per-chat search lists and per-search snapshot files |
 | `i18n.go` | Embedded translations and station dictionary |
@@ -46,8 +47,16 @@ add button starts the wizard. Search cards offer pause/resume and confirmed
 deletion. Lists use eight searches per page and include paused searches.
 Old wizard callback strings remain supported.
 Travel dates always use **Asia/Tbilisi**, regardless of user/host timezone.
-After selecting a route, offer time/train choices from the provider (including
-returned sold-out rides), sorted by departure time and paginated eight per page.
+After selecting a route, offer time/train choices from the independent tre.ge
+timetable, regardless of ticket availability, sorted by departure time and
+paginated eight per page. If the timetable is empty or unavailable, fall back to
+`available-rides` and label a nonempty fallback list as limited to available
+tickets; the published timetable omits some intermediate station pairs.
+Request `Date=YYYY-MM-DD`, with exact from/to station filters; a timezone offset
+can make the timetable API select the previous date. Validate the returned route
+and departure date. Historical captures may repeat a train: use the most recent
+`requestDate` per train. Guest access uses the public web client credentials;
+cache tokens in memory only, refresh on expiry/401, and never log credentials.
 Always offer "Any time" and refresh. Empty/error responses must not block setup.
 Validate train choices against the current draft; refreshing must not change what
 an old choice button selects. Time strings are compared as returned, with no
@@ -113,7 +122,8 @@ BuildKit cache mount. Version metadata is last. Avoid `--no-cache` in normal bui
 `DATA_DIR` defaults to `data` locally and `/app/data` in Docker. `TICKET_SOURCE`
 accepts `trege` (default) and its alias `tre.ge`, ignoring case and surrounding
 whitespace. Optional test/provider overrides: `TRE_API_BASE`,
-`TRE_API_KEY`, `TELEGRAM_API_BASE`. Never log token-bearing request URLs.
+`TRE_API_KEY`, `TRE_TIMETABLE_BASE`, `TRE_TIMETABLE_KEY`, `TELEGRAM_API_BASE`.
+Never log token-bearing request URLs.
 
 Use `gofmt`, idiomatic Go comments on exported symbols, contextual errors and
 `slog`. Synchronize shared worker/storage state and test concurrent lifecycle

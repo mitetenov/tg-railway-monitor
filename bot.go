@@ -14,10 +14,11 @@ import (
 )
 
 type wizard struct {
-	step           string
-	draft          config
-	departures     []departure
-	departureError bool
+	step              string
+	draft             config
+	departures        []departure
+	departureError    bool
+	departureFallback bool
 }
 
 type departure struct {
@@ -42,6 +43,7 @@ type bot struct {
 	tg        *telegram
 	store     *storage
 	poller    *poller
+	timetable timetableSource
 	locale    *catalog
 	stations  []station
 	index     map[string]station
@@ -51,8 +53,8 @@ type bot struct {
 	zone      *time.Location
 }
 
-func newBot(tg *telegram, store *storage, p *poller, locale *catalog) *bot {
-	return &bot{tg: tg, store: store, poller: p, locale: locale, index: make(map[string]station), wizards: make(map[[2]int64]*wizard), languages: make(map[int64]string), now: time.Now, zone: georgiaZone}
+func newBot(tg *telegram, store *storage, p *poller, timetable timetableSource, locale *catalog) *bot {
+	return &bot{tg: tg, store: store, poller: p, timetable: timetable, locale: locale, index: make(map[string]station), wizards: make(map[[2]int64]*wizard), languages: make(map[int64]string), now: time.Now, zone: georgiaZone}
 }
 
 func (b *bot) loadStations(ctx context.Context, api *railwayAPI) {
@@ -137,17 +139,34 @@ func (b *bot) stationKeyboard(lang, action string, page int) *markup {
 	return &markup{append(rows, nav, []button{{b.locale.text(lang, "button.cancel"), "cancel"}})}
 }
 
-// loadDepartures includes sold-out rides returned by the provider, since their
-// seats may become available during monitoring.
+// loadDepartures reads the timetable independently of ticket availability, so
+// sold-out trains remain selectable.
 func (b *bot) loadDepartures(ctx context.Context, w *wizard) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	c := w.draft
 	c.Class = "Any"
-	rides, err := b.poller.api.search(ctx, c)
+	rides, err := b.timetable.schedule(ctx, c)
 	w.departures = nil
 	w.departureError = err != nil
+	w.departureFallback = false
 	if err != nil {
 		slog.Warn("Cannot load departure choices", "error", err)
-		return
+		rides = nil
+	}
+	// tre.ge's published timetable omits some intermediate station pairs.
+	// Preserve the available departures for those routes and label the limited
+	// list, instead of silently removing previously selectable trains.
+	if len(rides) == 0 {
+		available, availabilityErr := b.poller.api.search(ctx, c)
+		if availabilityErr != nil {
+			w.departureError = true
+			slog.Warn("Cannot load fallback departure choices", "error", availabilityErr)
+		} else if len(available) > 0 {
+			rides = available
+			w.departureError = false
+			w.departureFallback = true
+		}
 	}
 	seen := make(map[departure]bool)
 	for _, r := range rides {
@@ -170,7 +189,9 @@ func (b *bot) loadDepartures(ctx context.Context, w *wizard) {
 func (b *bot) departureChoices(lang string, w *wizard, page int) (string, *markup) {
 	t := func(key string, args ...any) string { return b.locale.text(lang, key, args...) }
 	text := t("wizard.select_time")
-	if w.departureError {
+	if w.departureFallback {
+		text += "\n\n" + t("wizard.time_partial")
+	} else if w.departureError {
 		text += "\n\n" + t("wizard.time_unavailable")
 	} else if len(w.departures) == 0 {
 		text += "\n\n" + t("wizard.time_empty")

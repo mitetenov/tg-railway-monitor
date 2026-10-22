@@ -128,13 +128,14 @@ func run() error {
 	transport.MaxIdleConnsPerHost = 16
 	defer transport.CloseIdleConnections()
 	api := &railwayAPI{base: env("TRE_API_BASE", defaultRailwayBase), key: env("TRE_API_KEY", defaultRailwayKey), client: &http.Client{Transport: transport, Timeout: 15 * time.Second}}
+	timetable := &timetableAPI{base: env("TRE_TIMETABLE_BASE", defaultTimetableBase), key: env("TRE_TIMETABLE_KEY", defaultTimetableKey), client: api.client}
 	tg := &telegram{base: env("TELEGRAM_API_BASE", "https://api.telegram.org"), token: token, client: &http.Client{Transport: transport, Timeout: 40 * time.Second}}
 	if err := tg.initialize(ctx); err != nil {
 		return err
 	}
 	p := newPoller(ctx, store, api, tg, locale)
 	defer p.close()
-	b := newBot(tg, store, p, locale)
+	b := newBot(tg, store, p, timetable, locale)
 	b.loadStations(ctx, api)
 	restored, err := p.restore()
 	if err != nil {

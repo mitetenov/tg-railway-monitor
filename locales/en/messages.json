@@ -60,6 +60,7 @@
     "time_set": "🕐 Departure: *{time}*",
     "time_reload_btn": "🔄 Refresh trains",
     "time_unavailable": "Could not load trains. Refresh the list or select “Any time”.",
+    "time_partial": "The full timetable for this route is unavailable. Only trains with tickets currently available are shown.",
     "time_empty": "No trains were found for this date. Refresh the list or select “Any time” — I will notify you when tickets become available.",
     "class_any_btn": "✨ Any",
     "class_business_btn": "💼 Business",
