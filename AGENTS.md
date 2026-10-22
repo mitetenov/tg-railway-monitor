@@ -125,9 +125,9 @@ GitHub Actions validates modules, formatting, vet, golangci-lint v2.15.0,
 unit tests, race tests and the production binary on `ubuntu-26.04`.
 The required `test` job name stays unchanged. `setup-go` caches via `go.mod`;
 this standard-library-only module intentionally has no `go.sum`.
-Every PR, main push and manual validation builds and checks both Docker platforms
+Every PR, main push and manual validation builds both Docker platforms
 on native `ubuntu-26.04` / `ubuntu-26.04-arm` runners without credentials.
-Only main pushes log in and publish the same checked image IDs. Digest artifacts
+Only main pushes log in and publish the same built image IDs. Digest artifacts
 retain one day; manifests keep the existing `latest` and version tags. Publication
 is serialized and never cancelled mid-push. Actions use exact release SHA pins;
 weekly Dependabot covers Go modules, Actions and Docker, grouping minor/patch
@@ -155,3 +155,9 @@ Push to `origin`; branches `feat/...`, `fix/...`, `refactor/...`; PRs target
 Preserve unrelated dirty files and untracked `docs/`. Never add a coauthor trailer.
 Keep `.worktrees/` out of the Git index; local checkouts must not become gitlinks
 without `.gitmodules`, which breaks checkout credential cleanup in CI.
+
+Integration tests that start subprocesses and Docker runtime smoke checks were
+removed by request. Isolated domain, in-process HTTP fake and filesystem tests remain.
+
+Integration tests that start subprocesses and Docker runtime smoke checks were
+removed by request. Isolated domain, in-process HTTP fake and filesystem tests remain.

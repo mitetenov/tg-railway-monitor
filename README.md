@@ -124,6 +124,11 @@ Go собирается в отдельном этапе, финальный о�
 race-тесты, production-сборка и Docker-проверки обеих архитектур. Go 1.27.3 и
 Ubuntu 26.04 закреплены; Actions закреплены SHA. Dependabot еженедельно
 обновляет Go, Actions и Docker; minor/patch объединяются, major идут отдельно.
-После push в `main` обе архитектуры собираются на нативных runners, проходят
-runtime-проверки и публикуются в Docker Hub без повторной сборки.
+После push в `main` обе архитектуры собираются на нативных runners и публикуются в Docker Hub без повторной сборки.
 Замеры, внесённые оптимизации и рекомендации — в [CI_AUDIT.md](CI_AUDIT.md).
+
+Integration tests that start subprocesses and Docker runtime smoke checks were
+removed by request. Isolated domain, in-process HTTP fake and filesystem tests remain.
+
+Integration tests that start subprocesses and Docker runtime smoke checks were
+removed by request. Isolated domain, in-process HTTP fake and filesystem tests remain.

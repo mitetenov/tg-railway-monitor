@@ -1,3 +1,9 @@
+> Текущее изменение: удалены тесты с отдельными процессами и Docker runtime smoke;
+> CI сохраняет production/Docker-сборки и изолированные unit/mock-тесты.
+
+> Текущее изменение: удалены тесты с отдельными процессами и Docker runtime smoke;
+> CI сохраняет production/Docker-сборки и изолированные unit/mock-тесты.
+
 > Обновление стандарта 23 октября 2026: текущий workflow использует Ubuntu
 > 26.04, module verify/tidy, golangci-lint, отдельные unit/race и production build.
 > Docker обеих архитектур проверяется в PR без публикации; только push в main

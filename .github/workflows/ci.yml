@@ -66,7 +66,6 @@ jobs:
       - name: Production build
         run: |
           CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/ticket-monitor" .
-          DATA_DIR="$RUNNER_TEMP/data" "$RUNNER_TEMP/ticket-monitor" --check
       - name: Tests and race detector
         # Vet already ran, while -count=1 still executes every test on cache hits.
         run: go test -vet=off -race -count=1 -timeout=60s ./...
@@ -100,21 +99,9 @@ jobs:
           build-args: VERSION=${{ needs.test.outputs.version }}
           cache-from: type=gha,scope=image-${{ matrix.arch }}
           cache-to: type=gha,scope=image-${{ matrix.arch }},mode=max
-      - name: Runtime checks without credentials or network
+      - name: Record built image
         id: checked
-        shell: bash
-        env:
-          VERSION: ${{ needs.test.outputs.version }}
-          EXPECTED_ARCH: ${{ matrix.arch }}
-        run: |
-          image_id=$(docker image inspect -f '{{.Id}}' tg-ticket-monitor:ci)
-          test "$(docker image inspect -f '{{.Architecture}}' "$image_id")" = "$EXPECTED_ARCH"
-          docker run --rm --network none --read-only \
-            --tmpfs /app/data:uid=1000,gid=1000,mode=700 \
-            "$image_id" --check
-          test "$(docker run --rm --network none "$image_id" --version)" = "$VERSION"
-          test "$(docker image inspect -f '{{.Config.User}}' "$image_id")" = "1000:1000"
-          echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
+        run: echo "image_id=$(docker image inspect -f '{{.Id}}' tg-ticket-monitor:ci)" >> "$GITHUB_OUTPUT"
       - name: Log in to Docker Hub
         if: github.event_name == 'push'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
