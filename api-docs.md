@@ -62,12 +62,43 @@ persisted route/date snapshot. Errors do not clear it; absent rides/classes in
 a successful response do. Notifications contain all currently available rides
 matching the filter when any seats appear or increase.
 
-The wizard uses the same daily availability response for departure choices,
-including returned rides with zero seats. Choices contain the upstream `HH:MM`
-and ride number, are deduplicated, and are sorted by time then number. "Any time"
-is always available, including after an empty result or provider error.
+## Timetable (independent of availability)
+
+The wizard uses `https://api.tre.ge/v1/GeorgianRailway/stations/timetable`,
+the independent timetable consumed by the tre.ge website. The daily
+`available-rides` response can be empty when tickets sell out and cannot be the
+primary source of departure choices.
+
+Authenticate lazily with `POST /connect/token`, form-encoded
+`grant_type=client_credentials`, using the website's public `RailwayWeb` client.
+Cache the returned bearer token only in memory, with expiry and one retry after
+HTTP 401. Tokens, credentials, URLs, and response bodies are excluded from errors.
+`TRE_TIMETABLE_BASE` and `TRE_TIMETABLE_KEY` override this service independently
+of the availability API. Authentication and the timetable request share a
+15-second deadline and the existing reusable HTTP client.
+
+Request query: `Date=YYYY-MM-DD`, `FromStation=<code>`, `ToStation=<code>`.
+Use a date without a timezone: the service interprets an offset-bearing midnight
+as the previous UTC date. Require `ok=true` and a non-null `stationTable` array;
+an empty array is a successful empty schedule. Rows use `trainNumber`,
+`leavingDate`, `enteringDate`, `fromStationNumber`, `toStationNumber`, and
+`requestDate`. Check the returned route and departure date, and use the most
+recent capture per train to avoid obsolete times from historical duplicates.
+
+Live verification on 2026-10-22: Tbilisi to Batumi for 2026-10-23 and 2026-10-24
+returned no available rides but the timetable supplied trains 802 at 08:05 and
+804 at 17:10. For 2026-10-30 both sources agreed on train numbers and the raw
+displayed times (the availability response adds `Z`, without changing HH:MM).
+
+Choices contain the upstream `HH:MM` and train number, sorted by time then
+number. "Any time" is always available after an empty timetable or provider error.
+The published timetable does not cover every intermediate station pair: live
+verification found Kutaisi Airport → Batumi absent even with available tickets.
+If the timetable is empty or unavailable, fall back to the existing availability
+endpoint and explicitly label a nonempty list as limited to trains with tickets.
+Both lookups share a 15-second wizard deadline.
 Selected departures persist as `departure_time` and `ride_number`; notifications
-include only rides matching both values. The provider request still covers the
+include only rides matching both values. The availability request still covers the
 whole day. Existing searches without these fields include all departures and
 retain their notification history. Filtered snapshot keys include the departure
 time and number and do not reuse an unrestricted or legacy baseline.

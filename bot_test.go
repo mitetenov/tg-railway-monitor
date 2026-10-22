@@ -25,6 +25,17 @@ type botHarness struct {
 	requests []telegramRequest
 }
 
+type fakeTimetable struct {
+	rides []ride
+	err   error
+	calls int
+}
+
+func (a *fakeTimetable) schedule(context.Context, config) ([]ride, error) {
+	a.calls++
+	return a.rides, a.err
+}
+
 func newHarness(t *testing.T) *botHarness {
 	t.Helper()
 	h := &botHarness{}
@@ -47,7 +58,7 @@ func newHarness(t *testing.T) *botHarness {
 	t.Cleanup(server.Close)
 	p, _, _ := testPoller(t)
 	tg := &telegram{base: server.URL, token: "123:dummy", username: "rail_test_bot", client: server.Client()}
-	h.b = newBot(tg, p.store, p, p.locale)
+	h.b = newBot(tg, p.store, p, &fakeTimetable{}, p.locale)
 	h.b.stations = p.locale.fallback
 	for _, s := range h.b.stations {
 		h.b.index[string(s.Code)] = s
@@ -597,7 +608,7 @@ func TestWizardCrossingMidnightDoesNotCreatePastSearch(t *testing.T) {
 
 func TestWizardDepartureChoicesPersistAndRender(t *testing.T) {
 	h := newHarness(t)
-	a := h.b.poller.api.(*fakeAPI)
+	a := h.b.timetable.(*fakeTimetable)
 	a.rides = []ride{
 		{Number: "814", Start: "2026-10-24T18:00:00Z"},
 		{Number: "812", Start: "2026-10-24T08:00:00+04:00"}, // Sold out, still selectable.
@@ -649,7 +660,7 @@ func TestWizardDepartureChoicesPersistAndRender(t *testing.T) {
 
 func TestWizardDepartureFailureEmptyRetryAndPagination(t *testing.T) {
 	h := newHarness(t)
-	a := h.b.poller.api.(*fakeAPI)
+	a := h.b.timetable.(*fakeTimetable)
 	a.err = errors.New("provider unavailable")
 	for _, data := range []string{"search:add", "wiz_date:tomorrow", "wiz_from:56014", "wiz_to:57151"} {
 		h.handle(t, cb(1, 1, data))
@@ -690,5 +701,20 @@ func TestWizardDepartureFailureEmptyRetryAndPagination(t *testing.T) {
 	h.handle(t, cb(1, 1, "cancel"))
 	if len(h.b.wizards) != 0 || !keyboardHas(requestKeyboard(t, h.last()), "search:add") {
 		t.Fatal("time selection could not be canceled")
+	}
+}
+
+func TestWizardKeepsAvailableDeparturesForMissingTimetableRoute(t *testing.T) {
+	for _, timetableErr := range []error{nil, errors.New("timetable unavailable")} {
+		h := newHarness(t)
+		h.b.timetable.(*fakeTimetable).err = timetableErr
+		h.b.poller.api.(*fakeAPI).rides = []ride{sampleRide(1)}
+		for _, data := range []string{"search:add", "wiz_date:tomorrow", "wiz_from:56014", "wiz_to:57151"} {
+			h.handle(t, cb(1, 1, data))
+		}
+		keyboard := requestKeyboard(t, h.last())
+		if !keyboardHas(keyboard, (departure{time: "00:30", number: "812"}).callback()) || !keyboardHas(keyboard, "wiz_time:any") || !strings.Contains(h.last().Body["text"].(string), "Показаны рейсы, на которые сейчас есть билеты") {
+			t.Fatal("incomplete timetable removed available choices or hid limited coverage", h.last())
+		}
 	}
 }
