@@ -79,23 +79,24 @@ func (h *botHarness) last() telegramRequest {
 
 func TestBotCompleteWizardAndStop(t *testing.T) {
 	h := newHarness(t)
-	for _, u := range []update{msg(-1001, 7, "/start"), cb(-1001, 7, "wiz_date:tomorrow"), cb(-1001, 7, "wiz_from:56014"), cb(-1001, 7, "wiz_to:57151"), cb(-1001, 7, "wiz_class:Business")} {
+	for _, u := range []update{msg(-1001, 7, "/start"), cb(-1001, 7, "search:add"), cb(-1001, 7, "wiz_date:tomorrow"), cb(-1001, 7, "wiz_from:56014"), cb(-1001, 7, "wiz_to:57151"), cb(-1001, 7, "wiz_class:Business")} {
 		h.handle(t, u)
 	}
 	c, err := h.b.store.load(-1001)
-	if err != nil || !c.complete() || c.Date != "2026-10-24" || c.Class != "Business" || c.Language != "ru" {
+	if err != nil || len(c.Searches) != 1 || c.Searches[0].Date != "2026-10-24" || c.Searches[0].Class != "Business" || c.Language != "ru" {
 		t.Fatalf("%+v %v", c, err)
 	}
-	if !strings.Contains(h.last().Body["text"].(string), "Мониторинг запущен") {
+	if !strings.Contains(h.last().Body["text"].(string), "Активных поисков: 1") {
 		t.Fatal(h.last())
 	}
 	if len(h.b.wizards) != 0 {
 		t.Fatal("wizard not cleared")
 	}
 	h.handle(t, msg(-1001, 7, "/start"))
+	h.handle(t, cb(-1001, 7, "search:add"))
 	h.handle(t, msg(-1001, 7, "/stop"))
 	c, _ = h.b.store.load(-1001)
-	if c.complete() || len(h.b.wizards) != 0 {
+	if len(c.Searches) != 0 || len(h.b.wizards) != 0 {
 		t.Fatal("stop retained configuration or wizard")
 	}
 	if c.Language != "ru" {
@@ -110,7 +111,7 @@ func TestBotCompleteWizardAndStop(t *testing.T) {
 	}
 	h.handle(t, cb(-1001, 7, "wiz_class:I"))
 	c, _ = h.b.store.load(-1001)
-	if c.complete() {
+	if len(c.Searches) != 0 {
 		t.Fatal("stale callback reactivated monitoring")
 	}
 }
@@ -118,6 +119,7 @@ func TestBotCompleteWizardAndStop(t *testing.T) {
 func TestWizardDatesValidationAndCancellation(t *testing.T) {
 	h := newHarness(t)
 	h.handle(t, msg(1, 1, "/start"))
+	h.handle(t, cb(1, 1, "search:add"))
 	h.handle(t, cb(1, 1, "wiz_date:custom"))
 	for input, key := range map[string]string{"2026-02-30": "date_invalid", "2026-10-22": "date_past", "2026-1-02": "date_invalid", "oops": "date_invalid"} {
 		h.handle(t, msg(1, 1, input))
@@ -135,6 +137,7 @@ func TestWizardDatesValidationAndCancellation(t *testing.T) {
 	}
 	// Today must use Georgia's date even though UTC still says October 22.
 	h.handle(t, msg(1, 1, "/start"))
+	h.handle(t, cb(1, 1, "search:add"))
 	h.handle(t, cb(1, 1, "wiz_date:today"))
 	if got := h.b.wizards[[2]int64{1, 1}].draft.Date; got != "2026-10-23" {
 		t.Fatal(got)
@@ -145,21 +148,24 @@ func TestReconfigurationIsAtomicAndGroupWizardsAreIsolated(t *testing.T) {
 	h := newHarness(t)
 	old := testConfig()
 	saveConfig(t, h.b.store, 1, old)
-	for _, u := range []update{msg(1, 1, "/start"), cb(1, 1, "wiz_date:today"), cb(1, 1, "wiz_from:57151"), cb(1, 1, "wiz_to:56014")} {
+	for _, u := range []update{msg(1, 1, "/start"), cb(1, 1, "search:add"), cb(1, 1, "wiz_date:today"), cb(1, 1, "wiz_from:57151"), cb(1, 1, "wiz_to:56014")} {
 		h.handle(t, u)
 	}
 	c, _ := h.b.store.load(1)
-	if c != old {
+	if len(c.Searches) != 1 || c.Searches[0].routeKey() != old.routeKey() {
 		t.Fatal("unfinished wizard changed active route", c)
 	}
 	h.handle(t, cb(1, 1, "cancel"))
 	c, _ = h.b.store.load(1)
-	if c != old {
+	if len(c.Searches) != 1 || c.Searches[0].routeKey() != old.routeKey() {
 		t.Fatal("cancel changed route")
 	}
 	h.handle(t, msg(1, 1, "/start"))
+	h.handle(t, cb(1, 1, "search:add"))
 	h.handle(t, msg(1, 2, "/start"))
+	h.handle(t, cb(1, 2, "search:add"))
 	h.handle(t, msg(2, 1, "/start"))
+	h.handle(t, cb(2, 1, "search:add"))
 	h.handle(t, cb(1, 1, "wiz_date:today"))
 	if h.b.wizards[[2]int64{1, 2}].step != "date" || h.b.wizards[[2]int64{2, 1}].step != "date" {
 		t.Fatal("cross-user state leaked")
@@ -169,6 +175,7 @@ func TestReconfigurationIsAtomicAndGroupWizardsAreIsolated(t *testing.T) {
 func TestWizardStationsAndStaleCallbacks(t *testing.T) {
 	h := newHarness(t)
 	h.handle(t, msg(1, 1, "/start"))
+	h.handle(t, cb(1, 1, "search:add"))
 	h.handle(t, cb(1, 1, "wiz_class:Any"))
 	if h.b.wizards[[2]int64{1, 1}].step != "date" {
 		t.Fatal("out-of-order class accepted")
@@ -207,6 +214,7 @@ func TestWizardStationsAndStaleCallbacks(t *testing.T) {
 func TestLanguageCanChangeInsideWizardAndSurvivesRestart(t *testing.T) {
 	h := newHarness(t)
 	h.handle(t, msg(1, 1, "/start"))
+	h.handle(t, cb(1, 1, "search:add"))
 	h.handle(t, cb(1, 1, "lang_set:en"))
 	h.handle(t, cb(1, 1, "wiz_date:today"))
 	if h.last().Body["text"] != "🚉 *Select departure station:*" {
@@ -240,7 +248,7 @@ func TestOtherBotCommandsAndCorruptConfigRecovery(t *testing.T) {
 		t.Fatal("handled another bot's command")
 	}
 	h.handle(t, msg(1, 1, "/start@rail_test_bot"))
-	if len(h.b.wizards) != 1 {
+	if len(h.b.wizards) != 0 || !strings.Contains(h.last().Body["text"].(string), "Мои поиски") {
 		t.Fatal("did not handle own mention")
 	}
 	h.handle(t, msg(1, 1, "/unknown"))
@@ -334,6 +342,7 @@ func TestDotEnvPrecedenceAndQuotes(t *testing.T) {
 
 func TestLongPollingOffsetsAndDuplicateUpdates(t *testing.T) {
 	h := newHarness(t)
+	saveConfig(t, h.b.store, 1, testConfig())
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var offsets []int64
@@ -381,10 +390,10 @@ func TestLongPollingOffsetsAndDuplicateUpdates(t *testing.T) {
 	if fmt.Sprint(offsets) != "[0 11 12]" {
 		t.Fatal(offsets)
 	}
-	if len(h.b.wizards) != 1 {
+	c, _ := h.b.store.load(1)
+	if len(c.Searches) != 1 {
 		t.Fatal("duplicate update executed /stop")
 	}
-	c, _ := h.b.store.load(1)
 	if c.Language != "en" {
 		t.Fatal(c)
 	}
@@ -408,5 +417,179 @@ func TestStationFallbackAndAPIReenablesStation(t *testing.T) {
 				t.Fatal("station reload left stale entry")
 			}
 		}
+	}
+}
+
+func requestKeyboard(t *testing.T, request telegramRequest) *markup {
+	t.Helper()
+	data, err := json.Marshal(request.Body["reply_markup"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keyboard markup
+	if err := json.Unmarshal(data, &keyboard); err != nil {
+		t.Fatal(err)
+	}
+	return &keyboard
+}
+
+func keyboardHas(keyboard *markup, data string) bool {
+	for _, row := range keyboard.Rows {
+		for _, button := range row {
+			if button.Data == data {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestHomeShowsEmptySearchListAndAddButton(t *testing.T) {
+	for _, lang := range []string{"ru", "en"} {
+		t.Run(lang, func(t *testing.T) {
+			h := newHarness(t)
+			u := msg(1, 1, "/start")
+			u.Message.From.Language = lang
+			h.handle(t, u)
+			if !strings.Contains(h.last().Body["text"].(string), h.b.locale.text(lang, "searches.empty")) || !keyboardHas(requestKeyboard(t, h.last()), "search:add") {
+				t.Fatal("home lacks empty state or add button", h.last())
+			}
+			if len(h.b.wizards) != 0 {
+				t.Fatal("opening home started a wizard")
+			}
+			h.handle(t, cb(1, 1, "search:add"))
+			if h.b.wizards[[2]int64{1, 1}].step != "date" {
+				t.Fatal("add did not start wizard")
+			}
+			h.handle(t, cb(1, 1, "cancel"))
+			if len(h.b.wizards) != 0 || !keyboardHas(requestKeyboard(t, h.last()), "search:add") {
+				t.Fatal("cancel did not return home")
+			}
+		})
+	}
+}
+
+func TestBotMultipleSearchesPauseResumeDeleteAndStaleButtons(t *testing.T) {
+	h := newHarness(t)
+	h.handle(t, msg(1, 1, "/start"))
+	for _, class := range []string{"II", "Business"} {
+		for _, data := range []string{"search:add", "wiz_date:tomorrow", "wiz_from:56014", "wiz_to:57151", "wiz_class:" + class} {
+			h.handle(t, cb(1, 1, data))
+		}
+	}
+	chat, err := h.b.store.load(1)
+	if err != nil || len(chat.Searches) != 2 || chat.Searches[0].Class != "II" || chat.Searches[1].Class != "Business" {
+		t.Fatal("second wizard replaced first search", chat, err)
+	}
+	first, second := chat.Searches[0].ID, chat.Searches[1].ID
+	keyboard := requestKeyboard(t, h.last())
+	if !keyboardHas(keyboard, "search:view:"+first) || !keyboardHas(keyboard, "search:view:"+second) || !keyboardHas(keyboard, "search:add") {
+		t.Fatal("home omitted a search", keyboard)
+	}
+	h.handle(t, cb(1, 1, "search:view:"+first))
+	if !keyboardHas(requestKeyboard(t, h.last()), "search:pause:"+first) || !strings.Contains(h.last().Body["text"].(string), "Класс: II") {
+		t.Fatal("search card omitted details or pause")
+	}
+	h.handle(t, cb(1, 1, "search:pause:"+first))
+	if !keyboardHas(requestKeyboard(t, h.last()), "search:resume:"+first) {
+		t.Fatal("paused card lacks resume")
+	}
+	chat, _ = h.b.store.load(1)
+	if !chat.Searches[0].Paused || chat.Searches[1].Paused {
+		t.Fatal("pause affected another search", chat)
+	}
+	h.handle(t, cb(1, 1, "search:home"))
+	if !strings.Contains(h.last().Body["text"].(string), "Активных поисков: 1") {
+		t.Fatal("home counted paused search as active")
+	}
+	h.handle(t, cb(1, 1, "search:resume:"+first))
+	chat, _ = h.b.store.load(1)
+	if chat.Searches[0].Paused {
+		t.Fatal("resume did not persist")
+	}
+	// A search ID from a different chat grants no access to its settings.
+	for _, action := range []string{"view", "pause", "resume", "remove"} {
+		h.handle(t, cb(2, 1, "search:"+action+":"+first))
+	}
+	chat, _ = h.b.store.load(1)
+	if len(chat.Searches) != 2 || chat.Searches[0].Paused {
+		t.Fatal("another chat modified search", chat)
+	}
+	h.handle(t, cb(1, 1, "search:delete:"+first))
+	chat, _ = h.b.store.load(1)
+	if len(chat.Searches) != 2 || !keyboardHas(requestKeyboard(t, h.last()), "search:remove:"+first) {
+		t.Fatal("delete was not confirmed in the card")
+	}
+	h.handle(t, cb(1, 1, "search:view:"+first))
+	h.handle(t, cb(1, 1, "search:delete:"+first))
+	h.handle(t, cb(1, 1, "search:remove:"+first))
+	chat, _ = h.b.store.load(1)
+	if len(chat.Searches) != 1 || chat.Searches[0].ID != second {
+		t.Fatal("delete removed wrong search", chat)
+	}
+	for _, action := range []string{"resume", "pause", "view", "remove"} {
+		h.handle(t, cb(1, 1, "search:"+action+":"+first))
+	}
+	chat, _ = h.b.store.load(1)
+	if len(chat.Searches) != 1 || chat.Searches[0].ID != second {
+		t.Fatal("stale buttons resurrected deleted search", chat)
+	}
+	h.handle(t, cb(1, 1, "search:pause:"+second))
+	h.handle(t, cb(1, 1, "search:home"))
+	if !strings.Contains(h.last().Body["text"].(string), "не запущено ни одного поиска") || !keyboardHas(requestKeyboard(t, h.last()), "search:view:"+second) {
+		t.Fatal("paused-only home lost empty state or search")
+	}
+	h.handle(t, msg(1, 1, "/stop"))
+	chat, _ = h.b.store.load(1)
+	if len(chat.Searches) != 0 || chat.Language != "ru" || !keyboardHas(requestKeyboard(t, h.last()), "search:add") {
+		t.Fatal("stop did not clear searches and return home", chat)
+	}
+}
+
+func TestSearchListPaginationAndExpiry(t *testing.T) {
+	h := newHarness(t)
+	var ids []string
+	for i := 0; i < 10; i++ {
+		ids = append(ids, addTestSearch(t, h.b.store, 1, testConfig()))
+	}
+	h.handle(t, msg(1, 1, "/start"))
+	keyboard := requestKeyboard(t, h.last())
+	if !keyboardHas(keyboard, "search:view:"+ids[0]) || keyboardHas(keyboard, "search:view:"+ids[8]) || !keyboardHas(keyboard, "search:page:1") {
+		t.Fatal("incorrect first search page", keyboard)
+	}
+	h.handle(t, cb(1, 1, "search:page:999"))
+	keyboard = requestKeyboard(t, h.last())
+	if !keyboardHas(keyboard, "search:view:"+ids[9]) || !keyboardHas(keyboard, "search:page:0") || !keyboardHas(keyboard, "search:add") {
+		t.Fatal("incorrect last search page", keyboard)
+	}
+	c := testConfig()
+	c.Date = "2026-10-22" // Already October 23 in Georgia.
+	expired := addTestSearch(t, h.b.store, 1, c)
+	if err := h.b.store.setPaused(1, expired, true); err != nil {
+		t.Fatal(err)
+	}
+	h.handle(t, cb(1, 1, "search:view:"+expired))
+	chat, err := h.b.store.load(1)
+	if err != nil || len(chat.Searches) != 10 {
+		t.Fatal("opening expired card affected current searches", chat, err)
+	}
+	if _, exists := chat.find(expired); exists {
+		t.Fatal("expired paused search retained")
+	}
+}
+
+func TestWizardCrossingMidnightDoesNotCreatePastSearch(t *testing.T) {
+	h := newHarness(t)
+	for _, data := range []string{"search:add", "wiz_date:today", "wiz_from:56014", "wiz_to:57151"} {
+		h.handle(t, cb(1, 1, data))
+	}
+	h.b.now = func() time.Time { return time.Date(2026, 10, 24, 0, 0, 0, 0, georgiaZone) }
+	h.handle(t, cb(1, 1, "wiz_class:Any"))
+	chat, err := h.b.store.load(1)
+	if err != nil || len(chat.Searches) != 0 || h.b.wizards[[2]int64{1, 1}].step != "date" {
+		t.Fatal("wizard created expired search", chat, err)
+	}
+	if !strings.Contains(h.last().Body["text"].(string), "Дата в прошлом") {
+		t.Fatal("wizard did not explain date expiry")
 	}
 }

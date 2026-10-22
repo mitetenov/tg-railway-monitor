@@ -118,7 +118,12 @@ func (t *telegram) edit(ctx context.Context, out outgoing) error {
 	if out.Markup == nil {
 		out.Markup = &markup{Rows: [][]button{}}
 	}
-	return t.call(ctx, "editMessageText", out, nil)
+	err := t.call(ctx, "editMessageText", out, nil)
+	var apiError *telegramError
+	if errors.As(err, &apiError) && apiError.Code == 400 && strings.Contains(apiError.Description, "message is not modified") {
+		return nil
+	}
+	return err
 }
 
 func (t *telegram) initialize(ctx context.Context) error {
@@ -131,8 +136,8 @@ func (t *telegram) initialize(ctx context.Context) error {
 		return err
 	}
 	commands := []map[string]string{
-		{"command": "start", "description": "Start ticket monitoring setup wizard"},
-		{"command": "stop", "description": "Stop monitoring and clear configuration"},
+		{"command": "start", "description": "Open searches and add a new search"},
+		{"command": "stop", "description": "Stop and delete all searches"},
 		{"command": "lang", "description": "Set interface language (en / ru)"},
 	}
 	return t.call(ctx, "setMyCommands", map[string]any{"commands": commands}, nil)

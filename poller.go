@@ -22,7 +22,13 @@ type pollTask struct {
 	done   chan struct{}
 }
 
+type taskKey struct {
+	chatID   int64
+	searchID string
+}
+
 var errMonitorExpired = errors.New("monitoring date has passed")
+var errMonitorInactive = errors.New("search is paused or deleted")
 
 type poller struct {
 	ctx      context.Context
@@ -33,51 +39,107 @@ type poller struct {
 	interval time.Duration
 	now      func() time.Time
 	mu       sync.Mutex
-	tasks    map[int64]pollTask
+	tasks    map[taskKey]pollTask
 }
 
 func newPoller(ctx context.Context, store *storage, api ticketSource, sender messageSender, locale *catalog) *poller {
-	return &poller{ctx: ctx, store: store, api: api, sender: sender, locale: locale, interval: 60 * time.Second, now: time.Now, tasks: make(map[int64]pollTask)}
+	return &poller{ctx: ctx, store: store, api: api, sender: sender, locale: locale, interval: 60 * time.Second, now: time.Now, tasks: make(map[taskKey]pollTask)}
 }
 
-func (p *poller) stopLocked(id int64) {
-	if task, ok := p.tasks[id]; ok {
+func (p *poller) stopLocked(key taskKey) {
+	if task, ok := p.tasks[key]; ok {
 		task.cancel()
 		<-task.done
-		delete(p.tasks, id)
+		delete(p.tasks, key)
 	}
 }
-func (p *poller) stop(id int64) { p.mu.Lock(); defer p.mu.Unlock(); p.stopLocked(id) }
-func (p *poller) start(id int64) {
+func (p *poller) stop(id int64, searchID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.stopLocked(id)
+	p.stopLocked(taskKey{id, searchID})
+}
+
+func (p *poller) stopChat(id int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for key := range p.tasks {
+		if key.chatID == id {
+			p.stopLocked(key)
+		}
+	}
+}
+
+func (p *poller) start(id int64, searchID string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.startLocked(taskKey{id, searchID})
+}
+
+func (p *poller) startLocked(key taskKey) {
+	p.stopLocked(key)
 	ctx, cancel := context.WithCancel(p.ctx)
 	task := pollTask{cancel: cancel, done: make(chan struct{})}
-	p.tasks[id] = task
+	p.tasks[key] = task
 	go func() {
 		defer func() {
 			// Signal before taking the registry lock: stop waits while holding it.
 			close(task.done)
 			p.mu.Lock()
 			defer p.mu.Unlock()
-			if current, ok := p.tasks[id]; ok && current.done == task.done {
-				delete(p.tasks, id)
+			if current, ok := p.tasks[key]; ok && current.done == task.done {
+				delete(p.tasks, key)
 			}
 		}()
 		for ctx.Err() == nil {
-			err := p.check(ctx, id)
-			if errors.Is(err, errMonitorExpired) {
+			err := p.check(ctx, key.chatID, key.searchID)
+			if errors.Is(err, errMonitorExpired) || errors.Is(err, errMonitorInactive) {
 				return
 			}
 			if err != nil && ctx.Err() == nil {
-				slog.Warn("Ticket check failed; will retry", "chat_id", id, "error", err)
+				slog.Warn("Ticket check failed; will retry", "chat_id", key.chatID, "search_id", key.searchID, "error", err)
 			}
 			if !waitContext(ctx, p.interval) {
 				return
 			}
 		}
 	}()
+}
+
+// setPaused waits for in-flight delivery before changing the persisted status.
+// Keeping the snapshot suppresses unchanged tickets when the search resumes.
+func (p *poller) setPaused(id int64, searchID string, paused bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key := taskKey{id, searchID}
+	p.stopLocked(key)
+	if err := p.store.setPaused(id, searchID, paused); err != nil {
+		p.restartLocked(key)
+		return err
+	}
+	if !paused {
+		p.startLocked(key)
+	}
+	return nil
+}
+
+func (p *poller) remove(id int64, searchID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	key := taskKey{id, searchID}
+	p.stopLocked(key)
+	if err := p.store.removeSearch(id, searchID); err != nil {
+		p.restartLocked(key)
+		return err
+	}
+	return nil
+}
+
+func (p *poller) restartLocked(key taskKey) {
+	c, err := p.store.load(key.chatID)
+	entry, exists := c.find(key.searchID)
+	if err == nil && exists && !entry.Paused {
+		p.startLocked(key)
+	}
 }
 
 func (p *poller) close() {
@@ -100,15 +162,17 @@ func (p *poller) restore() (int, error) {
 			slog.Warn("Skipping unreadable configuration", "chat_id", id, "error", err)
 			continue
 		}
-		if c.complete() {
-			if c.expired(p.now()) {
-				if err := p.store.clearMonitor(id); err != nil {
-					slog.Warn("Cannot clear expired monitor", "chat_id", id, "error", err)
+		for _, entry := range c.Searches {
+			if entry.expired(p.now()) {
+				if err := p.store.removeSearch(id, entry.ID); err != nil {
+					slog.Warn("Cannot clear expired search", "chat_id", id, "search_id", entry.ID, "error", err)
 				}
 				continue
 			}
-			p.start(id)
-			count++
+			if !entry.Paused {
+				p.start(id, entry.ID)
+				count++
+			}
 		}
 	}
 	return count, nil
@@ -175,16 +239,19 @@ func (p *poller) notification(c config, rides []ride, previous snapshot) (snapsh
 	return next, header + "\n" + p.locale.text(lang, "poller.date", "date", c.Date) + "\n\n" + strings.Join(blocks, "\n\n")
 }
 
-func (p *poller) check(ctx context.Context, id int64) error {
-	c, err := p.store.load(id)
+func (p *poller) check(ctx context.Context, id int64, searchID string) error {
+	chat, err := p.store.load(id)
 	if err != nil {
 		return err
 	}
-	if !c.complete() {
-		return nil
+	entry, exists := chat.find(searchID)
+	if !exists || entry.Paused {
+		return errMonitorInactive
 	}
+	c := entry.config
+	c.Language = chat.Language
 	if c.expired(p.now()) {
-		if err := p.store.clearMonitor(id); err != nil {
+		if err := p.store.removeSearch(id, searchID); err != nil {
 			return err
 		}
 		return errMonitorExpired
@@ -193,21 +260,31 @@ func (p *poller) check(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	state, text := p.notification(c, rides, p.store.loadState(id, c.routeKey()))
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
+	// A request may straddle Georgian midnight.
+	if c.expired(p.now()) {
+		if err := p.store.removeSearch(id, searchID); err != nil {
+			return err
+		}
+		return errMonitorExpired
+	}
+	state, text := p.notification(c, rides, p.store.loadState(id, searchID, c.routeKey()))
 	if text != "" {
 		// Commit the snapshot only after delivery. A failed send is retried
 		// on the next check, rather than silently losing the notification.
 		for _, chunk := range splitNotification(text) {
-			if err := p.sender.send(ctx, outgoing{ChatID: id, Text: chunk, ParseMode: "Markdown"}); err != nil {
+			if err := p.sender.send(ctx, outgoing{ChatID: id, Text: chunk, ParseMode: "Markdown", Markup: &markup{Rows: [][]button{{{p.locale.text(c.Language, "searches.open"), "search:view:" + searchID}}}}}); err != nil {
 				return err
 			}
 		}
 	}
-	if err := p.store.saveState(id, state); err != nil {
-		slog.Warn("Cannot persist ticket snapshot", "chat_id", id, "error", err)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := p.store.saveState(id, searchID, state); err != nil {
+		slog.Warn("Cannot persist ticket snapshot", "chat_id", id, "search_id", searchID, "error", err)
 	}
 	return nil
 }

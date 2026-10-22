@@ -69,7 +69,7 @@ func TestPollerAvailabilitySequenceAndRestart(t *testing.T) {
 	}{{3, true}, {3, false}, {2, false}, {0, false}, {1, true}, {7, true}} {
 		a.rides = []ride{sampleRide(test.seats)}
 		before := len(s.messages)
-		if err := p.check(context.Background(), 1); err != nil {
+		if err := p.check(context.Background(), 1, "legacy"); err != nil {
 			t.Fatal(err)
 		}
 		if (len(s.messages) > before) != test.notify {
@@ -78,7 +78,7 @@ func TestPollerAvailabilitySequenceAndRestart(t *testing.T) {
 	}
 	// A fresh poller loads the Python-compatible on-disk snapshot.
 	p2 := newPoller(context.Background(), p.store, a, s, p.locale)
-	if err := p2.check(context.Background(), 1); err != nil {
+	if err := p2.check(context.Background(), 1, "legacy"); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.messages) != 3 {
@@ -86,11 +86,11 @@ func TestPollerAvailabilitySequenceAndRestart(t *testing.T) {
 	}
 	// An authoritative empty result removes stale rides, then reappearance notifies.
 	a.rides = nil
-	if err := p.check(context.Background(), 1); err != nil {
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
 		t.Fatal(err)
 	}
 	a.rides = []ride{sampleRide(7)}
-	if err := p.check(context.Background(), 1); err != nil {
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.messages) != 4 {
@@ -103,19 +103,19 @@ func TestPollerRetryDeliveryAndAPIFailure(t *testing.T) {
 	saveConfig(t, p.store, 1, testConfig())
 	a.rides = []ride{sampleRide(1)}
 	s.fail = true
-	if err := p.check(context.Background(), 1); err == nil {
+	if err := p.check(context.Background(), 1, "legacy"); err == nil {
 		t.Fatal("expected delivery error")
 	}
-	if state := p.store.loadState(1, testConfig().routeKey()); len(state.Rides) != 0 {
+	if state := p.store.loadState(1, "legacy", testConfig().routeKey()); len(state.Rides) != 0 {
 		t.Fatal("failed notification committed state")
 	}
 	s.fail = false
-	if err := p.check(context.Background(), 1); err != nil {
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
 		t.Fatal(err)
 	}
 	a.err = errors.New("upstream unavailable")
 	before, _ := os.ReadFile(p.store.path(1, true))
-	if err := p.check(context.Background(), 1); err == nil {
+	if err := p.check(context.Background(), 1, "legacy"); err == nil {
 		t.Fatal("expected API error")
 	}
 	after, _ := os.ReadFile(p.store.path(1, true))
@@ -123,7 +123,7 @@ func TestPollerRetryDeliveryAndAPIFailure(t *testing.T) {
 		t.Fatal("API failure reset baseline")
 	}
 	a.err = nil
-	if err := p.check(context.Background(), 1); err != nil {
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.messages) != 1 {
@@ -183,7 +183,7 @@ func TestPollerLifecycleAndRestore(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	p.stop(-1001)
+	p.stop(-1001, "legacy")
 	a.mu.Lock()
 	calls := a.calls
 	a.mu.Unlock()
@@ -192,7 +192,7 @@ func TestPollerLifecycleAndRestore(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		wg.Go(func() { p.start(-1001); p.stop(-1001) })
+		wg.Go(func() { p.start(-1001, "legacy"); p.stop(-1001, "legacy") })
 	}
 	wg.Wait()
 	p.mu.Lock()
@@ -260,28 +260,28 @@ func TestReliabilityClassSnapshotAndLegacyMigration(t *testing.T) {
 	saveConfig(t, p.store, 1, c)
 	a.rides = []ride{sampleRide(4)}
 	old := snapshot{Key: c.legacyRouteKey(), Rides: map[string]map[string]seatState{"812": {"1": {15, "76"}, "2": {4, "36"}, "5": {3, "126"}}}}
-	if err := p.store.saveState(1, old); err != nil {
+	if err := p.store.saveState(1, "legacy", old); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.check(context.Background(), 1); err != nil {
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.messages) != 0 {
 		t.Fatal("legacy state re-announced tickets")
 	}
-	stored := p.store.loadState(1, c.routeKey())
+	stored := p.store.loadState(1, "legacy", c.routeKey())
 	if stored.Key != c.routeKey() {
 		t.Fatal(stored)
 	}
 	c.Class = "I"
 	saveConfig(t, p.store, 1, c)
-	if err := p.check(context.Background(), 1); err != nil {
+	if err := p.check(context.Background(), 1, "legacy"); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.messages) != 1 {
 		t.Fatal("class change reused unrelated snapshot")
 	}
-	if p.store.loadState(1, c.routeKey()).Key != "56014>57151@2026-12-30#I" {
+	if p.store.loadState(1, "legacy", c.routeKey()).Key != "56014>57151@2026-12-30#I" {
 		t.Fatal("missing class identity")
 	}
 }
@@ -292,10 +292,10 @@ func TestExpiredMonitorsPreserveLanguageAndLeaveRegistry(t *testing.T) {
 	c := testConfig()
 	c.Date = "2026-10-22" // Already October 23 in Georgia.
 	saveConfig(t, p.store, 1, c)
-	if err := p.store.saveState(1, snapshot{Key: c.routeKey(), Rides: map[string]map[string]seatState{}}); err != nil {
+	if err := p.store.saveState(1, "legacy", snapshot{Key: c.routeKey(), Rides: map[string]map[string]seatState{}}); err != nil {
 		t.Fatal(err)
 	}
-	p.start(1)
+	p.start(1, "legacy")
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		p.mu.Lock()
@@ -313,7 +313,7 @@ func TestExpiredMonitorsPreserveLanguageAndLeaveRegistry(t *testing.T) {
 		t.Fatal("expired worker retained in registry")
 	}
 	got, err := p.store.load(1)
-	if err != nil || got != (config{Language: "ru"}) {
+	if err != nil || (got.Language != "ru" || len(got.Searches) != 0) {
 		t.Fatal(got, err)
 	}
 	if _, err := os.Stat(p.store.path(1, true)); !os.IsNotExist(err) {
@@ -333,9 +333,228 @@ func TestExpiredMonitorsPreserveLanguageAndLeaveRegistry(t *testing.T) {
 	if err != nil || n != 1 {
 		t.Fatal(n, err)
 	}
-	p.stop(3)
+	p.stop(3, "legacy")
 	got, _ = p.store.load(2)
-	if got != (config{Language: "ru"}) {
+	if got.Language != "ru" || len(got.Searches) != 0 {
 		t.Fatal(got)
+	}
+}
+
+type blockingAPI struct {
+	started chan config
+}
+
+func (a *blockingAPI) search(ctx context.Context, c config) ([]ride, error) {
+	select {
+	case a.started <- c:
+	case <-ctx.Done():
+	}
+	<-ctx.Done()
+	// Even a provider returning success after cancellation must not send or save.
+	return []ride{sampleRide(9)}, nil
+}
+
+type blockingSender struct {
+	started chan struct{}
+}
+
+func (s *blockingSender) send(ctx context.Context, out outgoing) error {
+	close(s.started)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestPauseCancelsDeliveryWithoutCommittingSnapshot(t *testing.T) {
+	p, a, _ := testPoller(t)
+	a.rides = []ride{sampleRide(4)}
+	sender := &blockingSender{started: make(chan struct{})}
+	p.sender = sender
+	id := addTestSearch(t, p.store, 1, testConfig())
+	p.start(1, id)
+	select {
+	case <-sender.started:
+	case <-time.After(time.Second):
+		t.Fatal("notification did not start")
+	}
+	if err := p.setPaused(1, id, true); err != nil {
+		t.Fatal(err)
+	}
+	if state := p.store.loadState(1, id, testConfig().routeKey()); len(state.Rides) != 0 {
+		t.Fatal("canceled delivery committed baseline")
+	}
+	chat, err := p.store.load(1)
+	if err != nil || len(chat.Searches) != 1 || !chat.Searches[0].Paused {
+		t.Fatal("delivery cancellation lost paused search", chat, err)
+	}
+}
+
+func awaitSearch(t *testing.T, started <-chan config) config {
+	t.Helper()
+	select {
+	case c := <-started:
+		return c
+	case <-time.After(time.Second):
+		t.Fatal("search did not start")
+		return config{}
+	}
+}
+
+func TestParallelSearchesPauseAndDeleteIndependently(t *testing.T) {
+	p, _, sender := testPoller(t)
+	a := &blockingAPI{started: make(chan config, 2)}
+	p.api = a
+	c := testConfig()
+	c.Class = "II"
+	first := addTestSearch(t, p.store, 1, c)
+	c.Class = "I"
+	second := addTestSearch(t, p.store, 1, c)
+	p.start(1, first)
+	p.start(1, second)
+	seen := map[string]bool{awaitSearch(t, a.started).Class: true}
+	seen[awaitSearch(t, a.started).Class] = true
+	if len(seen) != 2 {
+		t.Fatal("searches did not run simultaneously", seen)
+	}
+	if err := p.setPaused(1, first, true); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	_, secondRunning := p.tasks[taskKey{1, second}]
+	count := len(p.tasks)
+	p.mu.Unlock()
+	if count != 1 || !secondRunning {
+		t.Fatal("pause affected another worker", count)
+	}
+	chat, err := p.store.load(1)
+	if err != nil || len(chat.Searches) != 2 || !chat.Searches[0].Paused || chat.Searches[1].Paused {
+		t.Fatal("pause lost configuration", chat, err)
+	}
+	if err := p.remove(1, second); err != nil {
+		t.Fatal(err)
+	}
+	chat, err = p.store.load(1)
+	if err != nil || len(chat.Searches) != 1 || chat.Searches[0].ID != first {
+		t.Fatal("delete affected paused search", chat, err)
+	}
+	for _, id := range []string{first, second} {
+		if _, err := os.Stat(p.store.statePath(1, id)); !os.IsNotExist(err) {
+			t.Fatal("canceled request wrote a snapshot", err)
+		}
+	}
+	if len(sender.messages) != 0 {
+		t.Fatal("canceled request sent a notification")
+	}
+	// Concurrent lifecycle changes must never leak a worker or resurrect deletion.
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Go(func() {
+			if err := p.setPaused(1, first, false); err != nil && !errors.Is(err, errSearchNotFound) {
+				t.Error(err)
+			}
+			if err := p.setPaused(1, first, true); err != nil && !errors.Is(err, errSearchNotFound) {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Go(func() {
+		if err := p.remove(1, first); err != nil {
+			t.Error(err)
+		}
+	})
+	wg.Wait()
+	p.mu.Lock()
+	count = len(p.tasks)
+	p.mu.Unlock()
+	chat, err = p.store.load(1)
+	if err != nil || len(chat.Searches) != 0 || count != 0 {
+		t.Fatal("concurrent lifecycle resurrected search", chat, count, err)
+	}
+}
+
+func TestIndependentBaselinesSurvivePauseResumeAndRestart(t *testing.T) {
+	p, a, sender := testPoller(t)
+	c := testConfig()
+	// Identical searches still have independent delivery histories.
+	first := addTestSearch(t, p.store, 1, c)
+	second := addTestSearch(t, p.store, 1, c)
+	if err := p.store.update(1, func(c *chatConfig) error { c.Language = "ru"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	a.rides = []ride{sampleRide(4)}
+	for _, searchID := range []string{first, second, first, second} {
+		if err := p.check(context.Background(), 1, searchID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(sender.messages) != 2 {
+		t.Fatal("searches shared baseline or reannounced seats", len(sender.messages))
+	}
+	for i, id := range []string{first, second} {
+		if sender.messages[i].Markup.Rows[0][0].Data != "search:view:"+id {
+			t.Fatal("notification linked to wrong search")
+		}
+	}
+	if err := p.setPaused(1, first, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.check(context.Background(), 1, first); !errors.Is(err, errMonitorInactive) {
+		t.Fatal("paused search polled", err)
+	}
+	// Restart: resume only active searches, preserving both snapshot files.
+	p2 := newPoller(context.Background(), p.store, a, sender, p.locale)
+	p2.now = p.now
+	t.Cleanup(p2.close)
+	n, err := p2.restore()
+	if err != nil || n != 1 {
+		t.Fatal("paused search resumed at startup", n, err)
+	}
+	p2.stopChat(1)
+	if err := p2.setPaused(1, first, false); err != nil {
+		t.Fatal(err)
+	}
+	// Stop and manually run one completed check to avoid relying on timing.
+	p2.stop(1, first)
+	if err := p2.check(context.Background(), 1, first); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.messages) != 2 {
+		t.Fatal("resume or restart reannounced unchanged tickets")
+	}
+	a.rides = []ride{sampleRide(8)}
+	if err := p2.check(context.Background(), 1, first); err != nil {
+		t.Fatal(err)
+	}
+	if len(sender.messages) != 3 {
+		t.Fatal("increase after pause not delivered")
+	}
+	if err := p2.remove(1, first); err != nil {
+		t.Fatal(err)
+	}
+	if state := p.store.loadState(1, second, c.routeKey()); state.Rides["812"]["2"].Seats != 4 {
+		t.Fatal("deletion changed another baseline", state)
+	}
+}
+
+func TestRestoreExpiresOnlyPastSearchesIncludingPaused(t *testing.T) {
+	p, _, _ := testPoller(t)
+	c := testConfig()
+	live := addTestSearch(t, p.store, 1, c)
+	paused := addTestSearch(t, p.store, 1, c)
+	c.Date = "2026-10-21"
+	expired := addTestSearch(t, p.store, 1, c)
+	if err := p.store.setPaused(1, paused, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.store.setPaused(1, expired, true); err != nil {
+		t.Fatal(err)
+	}
+	n, err := p.restore()
+	if err != nil || n != 1 {
+		t.Fatal(n, err)
+	}
+	p.stopChat(1)
+	chat, err := p.store.load(1)
+	if err != nil || len(chat.Searches) != 2 || chat.Searches[0].ID != live || chat.Searches[1].ID != paused || !chat.Searches[1].Paused {
+		t.Fatal("expiration affected current searches", chat, err)
 	}
 }

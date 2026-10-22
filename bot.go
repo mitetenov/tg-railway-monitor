@@ -123,12 +123,124 @@ func (b *bot) stationKeyboard(lang, action string, page int) *markup {
 	return &markup{append(rows, nav, []button{{b.locale.text(lang, "button.cancel"), "cancel"}})}
 }
 
+func (b *bot) respond(ctx context.Context, id int64, messageID int, text string, keyboard *markup) error {
+	out := outgoing{ChatID: id, MessageID: messageID, Text: text, ParseMode: "Markdown", Markup: keyboard}
+	if messageID != 0 {
+		return b.tg.edit(ctx, out)
+	}
+	return b.tg.send(ctx, out)
+}
+
+func (b *bot) className(lang, class string) string {
+	if class == "Any" {
+		return b.locale.text(lang, "searches.class_any")
+	}
+	return class
+}
+
+func (b *bot) showHome(ctx context.Context, id int64, messageID int, lang string, page int) error {
+	c, err := b.store.load(id)
+	if err != nil {
+		return err
+	}
+	// Paused searches have no worker to expire them, so also prune on navigation.
+	for _, entry := range c.Searches {
+		if entry.expired(b.now()) {
+			if err := b.poller.remove(id, entry.ID); err != nil {
+				return err
+			}
+		}
+	}
+	c, err = b.store.load(id)
+	if err != nil {
+		return err
+	}
+	t := func(key string, args ...any) string { return b.locale.text(lang, key, args...) }
+	active := 0
+	for _, entry := range c.Searches {
+		if !entry.Paused {
+			active++
+		}
+	}
+	text := t("start.welcome") + "\n\n" + t("searches.title") + "\n"
+	if active == 0 {
+		text += t("searches.empty")
+	} else {
+		text += t("searches.active_count", "count", active)
+	}
+	if len(c.Searches) > 0 {
+		text += "\n\n" + t("searches.select")
+	}
+	const pageSize = 8
+	pages := max(1, (len(c.Searches)+pageSize-1)/pageSize)
+	page = max(0, min(page, pages-1))
+	rows := [][]button{}
+	for _, entry := range c.Searches[min(page*pageSize, len(c.Searches)):min((page+1)*pageSize, len(c.Searches))] {
+		status := "🟢"
+		if entry.Paused {
+			status = "⏸"
+		}
+		label := fmt.Sprintf("%s %s → %s · %s · %s", status, b.locale.stationName(entry.FromCode, lang, entry.From), b.locale.stationName(entry.ToCode, lang, entry.To), entry.Date, b.className(lang, entry.Class))
+		rows = append(rows, []button{{label, "search:view:" + entry.ID}})
+	}
+	if pages > 1 {
+		var nav []button
+		if page > 0 {
+			nav = append(nav, button{t("button.prev"), fmt.Sprintf("search:page:%d", page-1)})
+		}
+		nav = append(nav, button{fmt.Sprintf("%d/%d", page+1, pages), "noop"})
+		if page+1 < pages {
+			nav = append(nav, button{t("button.next"), fmt.Sprintf("search:page:%d", page+1)})
+		}
+		rows = append(rows, nav)
+	}
+	rows = append(rows, []button{{t("searches.add"), "search:add"}})
+	return b.respond(ctx, id, messageID, text, &markup{Rows: rows})
+}
+
+func (b *bot) showSearch(ctx context.Context, id int64, messageID int, lang, searchID string, confirmDelete bool) error {
+	c, err := b.store.load(id)
+	if err != nil {
+		return err
+	}
+	entry, exists := c.find(searchID)
+	if !exists {
+		return b.showHome(ctx, id, messageID, lang, 0)
+	}
+	if entry.expired(b.now()) {
+		if err := b.poller.remove(id, searchID); err != nil {
+			return err
+		}
+		return b.showHome(ctx, id, messageID, lang, 0)
+	}
+	t := func(key string, args ...any) string { return b.locale.text(lang, key, args...) }
+	text := t("searches.details", "from_name", markdown(b.locale.stationName(entry.FromCode, lang, entry.From)), "to_name", markdown(b.locale.stationName(entry.ToCode, lang, entry.To)), "date", entry.Date, "class_name", b.className(lang, entry.Class))
+	status, action, label := "searches.active", "pause", "searches.pause"
+	if entry.Paused {
+		status, action, label = "searches.paused", "resume", "searches.resume"
+	}
+	text += "\n\n" + t(status)
+	rows := [][]button{
+		{{t(label), "search:" + action + ":" + searchID}},
+		{{t("searches.delete"), "search:delete:" + searchID}},
+		{{t("searches.back"), "search:home"}},
+	}
+	if confirmDelete {
+		text += "\n\n" + t("searches.delete_confirm")
+		rows = [][]button{
+			{{t("searches.delete_yes"), "search:remove:" + searchID}},
+			{{t("searches.delete_no"), "search:view:" + searchID}},
+		}
+	}
+	return b.respond(ctx, id, messageID, text, &markup{Rows: rows})
+}
+
 func (b *bot) setLanguage(id int64, code string) (string, error) {
 	code = strings.ToLower(strings.Split(code, "-")[0])
 	if code != "ru" && code != "en" {
 		return "", errors.New("unsupported language")
 	}
-	if err := b.store.update(id, func(c *config) { c.Language = code }); err != nil {
+	if err := b.store.update(id, func(c *chatConfig) error { c.Language = code; return nil }); err != nil {
 		return "", err
 	}
 	b.languages[id] = code
@@ -183,7 +295,7 @@ func (b *bot) handle(ctx context.Context, u update) error {
 			}
 		}
 		if command == "/stop" {
-			b.poller.stop(id)
+			b.poller.stopChat(id)
 			if err := b.store.clearMonitor(id); err != nil {
 				return err
 			}
@@ -192,20 +304,23 @@ func (b *bot) handle(ctx context.Context, u update) error {
 					delete(b.wizards, k)
 				}
 			}
-			return send(t("stop.stopped"), nil)
+			if err := send(t("stop.stopped"), nil); err != nil {
+				return err
+			}
+			return b.showHome(ctx, id, 0, lang, 0)
 		}
 		if loadErr != nil {
 			return loadErr
 		}
 		if c.Language == "" {
-			if err := b.store.update(id, func(c *config) { c.Language = lang }); err != nil {
+			if err := b.store.update(id, func(c *chatConfig) error { c.Language = lang; return nil }); err != nil {
 				return err
 			}
 		}
 		switch command {
 		case "/start":
-			b.wizards[key] = &wizard{step: "date"}
-			return send(t("wizard.date_select"), b.keyboard(lang, "date"))
+			delete(b.wizards, key)
+			return b.showHome(ctx, id, 0, lang, 0)
 		case "/lang":
 			if len(args) != 2 {
 				return send(t("lang.select"), b.keyboard(lang, "lang"))
@@ -249,6 +364,55 @@ func (b *bot) handle(ctx context.Context, u update) error {
 		return loadErr
 	}
 	data := u.Callback.Data
+	if data == "search:home" {
+		delete(b.wizards, key)
+		return b.showHome(ctx, id, m.ID, lang, 0)
+	}
+	if data == "search:add" {
+		if c.Language == "" {
+			if _, err := b.setLanguage(id, lang); err != nil {
+				return err
+			}
+		}
+		b.wizards[key] = &wizard{step: "date"}
+		return edit(t("wizard.date_select"), b.keyboard(lang, "date"))
+	}
+	if strings.HasPrefix(data, "search:page:") {
+		page, err := strconv.Atoi(strings.TrimPrefix(data, "search:page:"))
+		if err != nil {
+			return nil
+		}
+		return b.showHome(ctx, id, m.ID, lang, page)
+	}
+	if strings.HasPrefix(data, "search:") {
+		parts := strings.Split(data, ":")
+		if len(parts) != 3 || !validSearchID(parts[2]) {
+			return nil
+		}
+		action, searchID := parts[1], parts[2]
+		switch action {
+		case "view", "delete":
+			delete(b.wizards, key)
+			return b.showSearch(ctx, id, m.ID, lang, searchID, action == "delete")
+		case "pause", "resume":
+			entry, exists := c.find(searchID)
+			if !exists || entry.expired(b.now()) {
+				return b.showHome(ctx, id, m.ID, lang, 0)
+			}
+			if entry.Paused != (action == "pause") {
+				if err := b.poller.setPaused(id, searchID, action == "pause"); err != nil && !errors.Is(err, errSearchNotFound) {
+					return err
+				}
+			}
+			return b.showSearch(ctx, id, m.ID, lang, searchID, false)
+		case "remove":
+			if err := b.poller.remove(id, searchID); err != nil {
+				return err
+			}
+			return b.showHome(ctx, id, m.ID, lang, 0)
+		}
+		return nil
+	}
 	if strings.HasPrefix(data, "lang_set:") {
 		code := strings.TrimPrefix(data, "lang_set:")
 		if code != "en" && code != "ru" {
@@ -270,7 +434,7 @@ func (b *bot) handle(ctx context.Context, u update) error {
 	}
 	if data == "cancel" {
 		delete(b.wizards, key)
-		return edit(t("wizard.cancelled"), nil)
+		return b.showHome(ctx, id, m.ID, lang, 0)
 	}
 	if data == "noop" {
 		return nil
@@ -279,7 +443,7 @@ func (b *bot) handle(ctx context.Context, u update) error {
 		choice := strings.TrimPrefix(data, "wiz_date:")
 		if choice == "custom" {
 			w.step = "custom"
-			return edit(t("wizard.date_custom_prompt"), nil)
+			return edit(t("wizard.date_custom_prompt"), &markup{Rows: [][]button{{{t("button.cancel"), "cancel"}}}})
 		}
 		if choice != "today" && choice != "tomorrow" {
 			return nil
@@ -345,19 +509,20 @@ func (b *bot) handle(ctx context.Context, u update) error {
 		if !w.draft.complete() {
 			return errors.New("incomplete wizard configuration")
 		}
-		b.poller.stop(id)
-		if err := b.store.update(id, func(c *config) { previousLang := c.Language; *c = w.draft; c.Language = previousLang }); err != nil {
-			if c.complete() {
-				b.poller.start(id)
-			}
+		if w.draft.expired(b.now()) {
+			w.step = "date"
+			return edit(t("wizard.date_past"), b.keyboard(lang, "date"))
+		}
+		searchID, err := b.store.addSearch(id, w.draft)
+		if err != nil {
 			return err
 		}
 		delete(b.wizards, key)
-		b.poller.start(id)
+		b.poller.start(id, searchID)
 		if err := edit(t("wizard.class_set", "class_name", class), nil); err != nil {
 			return err
 		}
-		return send(t("wizard.monitoring_started"), nil)
+		return b.showHome(ctx, id, 0, lang, 0)
 	}
 	return nil
 }
