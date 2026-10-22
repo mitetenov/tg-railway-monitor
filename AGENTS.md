@@ -122,7 +122,14 @@ are excluded. Manifest and runtime assets precede source; compiler cache uses a
 BuildKit cache mount. Version metadata is last. Avoid `--no-cache` in normal builds.
 
 GitHub Actions runs formatting, vet, and race tests on x86 `ubuntu-24.04` for
-pull requests and pushes to `main`. Docker jobs run only on pushes to `main`:
+pull requests and pushes to `main`. The `test` job is a required branch check:
+keep its name. It validates `version.txt` before installing Go and exports the
+version to both Docker jobs. `setup-go` caches compiled packages using `go.mod`
+(there is no `go.sum`); keep `-count=1` so cached compilation never skips tests.
+Standalone vet runs before `go test -vet=off -race`. Job timeouts are 5/10/3
+minutes for test/platform build/publish. Actions are pinned to verified commit
+SHAs and updated together through weekly Dependabot PRs.
+Docker jobs run only on pushes to `main`:
 build and check each image on a matching native runner (`ubuntu-24.04` for amd64
 and `ubuntu-24.04-arm` for arm64), with separate BuildKit cache scopes, then
 push that same checked Image ID with `docker image push`, without rebuilding.
@@ -130,6 +137,9 @@ Each architecture is built only once per run. Intermediate tags include the run
 ID, attempt, and architecture to avoid collisions; the published digest is passed
 to `docker-publish`. Only after both platform jobs succeed does `docker-publish`
 assemble the `latest` and version manifests from those digests.
+The publish job uses the runner's preinstalled Buildx CLI without starting a
+BuildKit daemon. Build records and digest artifacts are retained for one day.
+See `CI_AUDIT.md` for baseline timings, tradeoffs, and further recommendations.
 
 ## Environment and conventions
 
@@ -151,3 +161,5 @@ it. Time strings from railway responses are displayed as returned (no conversion
 Push to `origin`; branches `feat/...`, `fix/...`, `refactor/...`; PRs target
 `main` only. Rebase/merge main before a PR; squash-merge only when requested.
 Preserve unrelated dirty files and untracked `docs/`. Never add a coauthor trailer.
+Keep `.worktrees/` out of the Git index; local checkouts must not become gitlinks
+without `.gitmodules`, which breaks checkout credential cleanup in CI.
