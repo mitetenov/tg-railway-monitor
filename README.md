@@ -61,7 +61,7 @@ Docker сохраняет настройки и состояние монито�
 |---|---|
 | `BOT_TOKEN` | Обязательный токен Telegram |
 | `DATA_DIR` | Каталог JSON-файлов; `data` локально, `/app/data` в Docker |
-| `TICKET_SOURCE` | Поддерживается `trege` (по умолчанию) |
+| `TICKET_SOURCE` | `trege` (по умолчанию) или `tre.ge`; регистр и пробелы по краям не учитываются |
 | `TRE_API_BASE`, `TRE_API_KEY` | Необязательная замена адреса/публичного ключа tre.ge |
 | `TELEGRAM_API_BASE` | Необязательный адрес Telegram API для локальных проверок |
 
