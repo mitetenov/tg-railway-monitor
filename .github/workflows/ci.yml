@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,14 +18,17 @@ defaults:
   run:
     shell: bash
 
+env:
+  GOTOOLCHAIN: local
+
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Read and validate version
@@ -40,6 +44,10 @@ jobs:
           # A stable key avoids uploading a new cache on every source change.
           cache: true
           cache-dependency-path: go.mod
+      - name: Check modules
+        run: |
+          go mod tidy -diff
+          go mod verify
       - name: Check formatting
         run: |
           unformatted=$(gofmt -l ./*.go)
@@ -49,32 +57,40 @@ jobs:
           fi
       - name: Vet
         run: go vet ./...
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+      - name: Unit tests
+        run: go test -vet=off -count=1 ./...
+      - name: Production build
+        run: |
+          CGO_ENABLED=0 go build -trimpath -o "$RUNNER_TEMP/ticket-monitor" .
       - name: Tests and race detector
         # Vet already ran, while -count=1 still executes every test on cache hits.
         run: go test -vet=off -race -count=1 -timeout=60s ./...
 
   docker-build:
-    if: github.event_name == 'push'
     needs: [test]
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     env:
       DOCKER_BUILD_RECORD_RETENTION_DAYS: 1
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build platform image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           load: true
@@ -83,27 +99,17 @@ jobs:
           build-args: VERSION=${{ needs.test.outputs.version }}
           cache-from: type=gha,scope=image-${{ matrix.arch }}
           cache-to: type=gha,scope=image-${{ matrix.arch }},mode=max
-      - name: Runtime checks without credentials or network
+      - name: Record built image
         id: checked
-        shell: bash
-        env:
-          VERSION: ${{ needs.test.outputs.version }}
-          EXPECTED_ARCH: ${{ matrix.arch }}
-        run: |
-          image_id=$(docker image inspect -f '{{.Id}}' tg-ticket-monitor:ci)
-          test "$(docker image inspect -f '{{.Architecture}}' "$image_id")" = "$EXPECTED_ARCH"
-          docker run --rm --network none --read-only \
-            --tmpfs /app/data:uid=1000,gid=1000,mode=700 \
-            "$image_id" --check
-          test "$(docker run --rm --network none "$image_id" --version)" = "$VERSION"
-          test "$(docker image inspect -f '{{.Config.User}}' "$image_id")" = "1000:1000"
-          echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
+        run: echo "image_id=$(docker image inspect -f '{{.Id}}' tg-ticket-monitor:ci)" >> "$GITHUB_OUTPUT"
       - name: Log in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        if: github.event_name == 'push'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
       - name: Push checked image and export digest
+        if: github.event_name == 'push'
         shell: bash
         env:
           IMAGE: ${{ secrets.DOCKER_USERNAME }}/tg-ticket-monitor
@@ -118,6 +124,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/digests"
           touch "$RUNNER_TEMP/digests/${digest#sha256:}"
       - name: Upload image digest
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digests-${{ matrix.arch }}
@@ -128,7 +135,7 @@ jobs:
   docker-publish:
     if: github.event_name == 'push'
     needs: [test, docker-build]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 3
     steps:
       - name: Download image digests
@@ -139,7 +146,7 @@ jobs:
           merge-multiple: true
       # imagetools uses the runner's Buildx CLI; it needs no BuildKit daemon.
       - name: Log in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}

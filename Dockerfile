@@ -1,10 +1,10 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.28.0
 ARG GO_VERSION=1.27.3
 
 # Build natively and cross-compile; releases do not require QEMU.
-FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine3.24 AS build
 WORKDIR /src
-ENV CGO_ENABLED=0
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local
 
 # No third-party modules. Keep the manifest before source for stable caching.
 COPY go.mod ./
